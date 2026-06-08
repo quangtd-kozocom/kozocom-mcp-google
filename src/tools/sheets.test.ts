@@ -44,6 +44,7 @@ describe("sheetsCreateSpreadsheet", () => {
     const res = await sheetsCreateSpreadsheet(asSheets(sheets), { title: "Budget", sheet_titles: ["Q1"] });
     expect(sheets.spreadsheets.create).toHaveBeenCalledWith(
       expect.objectContaining({
+        fields: "spreadsheetId,properties.title,sheets(properties(sheetId,title))",
         requestBody: expect.objectContaining({
           properties: { title: "Budget" },
           sheets: [{ properties: { title: "Q1" } }],
@@ -70,6 +71,12 @@ describe("sheetsGetSpreadsheet", () => {
       },
     });
     const res = await sheetsGetSpreadsheet(asSheets(sheets), { spreadsheet_id: "s1", response_format: "markdown" });
+    expect(sheets.spreadsheets.get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spreadsheetId: "s1",
+        fields: "spreadsheetId,properties.title,sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))",
+      }),
+    );
     expect(res.content[0].text).toContain("Sheet1");
     expect(res.structuredContent).toMatchObject({ sheets: [{ title: "Sheet1", rows: 100 }] });
   });

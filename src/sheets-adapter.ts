@@ -52,7 +52,7 @@ export class SheetsAdapter {
           ? { sheets: args.sheetTitles.map((title) => ({ properties: { title } })) }
           : {}),
       },
-      fields: "spreadsheetId, properties.title, sheets(properties(sheetId,title))",
+      fields: "spreadsheetId,properties.title,sheets(properties(sheetId,title))",
     });
     return {
       spreadsheetId: data.spreadsheetId,
@@ -68,7 +68,7 @@ export class SheetsAdapter {
     const { data } = await this.sheets.spreadsheets.get({
       spreadsheetId,
       fields:
-        "spreadsheetId, properties.title, sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))",
+        "spreadsheetId,properties.title,sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))",
     });
     return {
       spreadsheetId: data.spreadsheetId,
