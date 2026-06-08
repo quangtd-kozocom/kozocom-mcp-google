@@ -16,9 +16,25 @@ export type ArgsOf<Shape extends z.ZodRawShape> = z.infer<z.ZodObject<Shape>>;
  * A self-registering tool. Defining a tool yields one of these; the registry
  * just calls it with the server. Capturing registration in a closure (rather
  * than an erased `{ definition, handler }` record) is what lets each tool stay
- * fully type-checked against its own schema.
+ * fully type-checked against its own schema. The closure also carries the
+ * tool's `name` and `annotations` so registries can filter (e.g. drop
+ * dangerous tools in safe mode) without re-deriving them.
  */
-export type ToolRegistration = (server: McpServer) => void;
+export interface ToolRegistration {
+  (server: McpServer): void;
+  readonly toolName: string;
+  readonly annotations: ToolAnnotations;
+}
+
+/**
+ * Whether a tool only reads — never mutates Drive/Sheets or local auth state.
+ * Driven by the honest `readOnlyHint` annotation each tool sets. Safe-mode
+ * configs expose only these; every mutating tool (create/write/delete, plus
+ * login/logout) is treated as dangerous and disabled.
+ */
+export function isReadOnlyTool(registration: ToolRegistration): boolean {
+  return registration.annotations.readOnlyHint === true;
+}
 
 interface ToolSpec<Shape extends z.ZodRawShape> {
   name: string;
@@ -41,7 +57,7 @@ function register<Shape extends z.ZodRawShape>(
       return errorResult(handleGoogleError(error));
     }
   };
-  return (server) => {
+  const registration: (server: McpServer) => void = (server) => {
     // The SDK's callback type is generic over its own zod-compat shapes and a
     // wider CallToolResult content union than ToolResult. `callback` is fully
     // checked against `Shape` above; this single cast bridges that boundary —
@@ -52,6 +68,7 @@ function register<Shape extends z.ZodRawShape>(
       callback as unknown as ToolCallback<Shape>,
     );
   };
+  return Object.assign(registration, { toolName: name, annotations });
 }
 
 /**

@@ -17,8 +17,10 @@
     "start": "node dist/cli.js",
     "login": "node dist/cli.js login",
     "setup": "node dist/cli.js setup",
-    "login:dev": "tsx src/login.ts",
+    "config": "node dist/cli.js config",
+    "login:dev": "tsx src/cli.ts login",
     "setup:dev": "tsx src/cli.ts setup",
+    "config:dev": "tsx src/cli.ts config",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint",
@@ -31,6 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^15.0.0",
     "googleapis": "^144.0.0",
     "open": "^10.1.0",
     "zod": "^4.4.3"

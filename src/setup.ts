@@ -3,6 +3,9 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stderr as output } from "node:process";
 import { CLIENT_SECRET_PATH, CONFIG_DIR } from "./constants.js";
 import { getAuthStatus, runLoginFlow } from "./auth.js";
+import { DANGEROUS_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from "./tools/google.js";
+
+const SERVER_KEY = "kozocom-google";
 
 type ClientName = "codex" | "claude" | "copilot" | "all";
 
@@ -17,6 +20,11 @@ interface McpSnippetOptions {
   command?: string;
   args?: string[];
   credentialsPath?: string;
+  /**
+   * When true, the emitted config disables the dangerous (mutating) tools using
+   * each client's own mechanism, leaving only the read-only tools enabled.
+   */
+  safeMode?: boolean;
 }
 
 const PACKAGE_NAME = "kozocom-mcp-google";
@@ -42,77 +50,111 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-export function mcpConfigSnippet({
-  client,
-  command = "npx",
-  args = ["-y", PACKAGE_NAME],
-  credentialsPath = CLIENT_SECRET_PATH,
-}: McpSnippetOptions): string {
-  const codex = `[mcp_servers.kozocom-google]
-command = ${JSON.stringify(command)}
-args = ${JSON.stringify(args)}
-env = { GOOGLE_OAUTH_CREDENTIALS = ${JSON.stringify(credentialsPath)} }`;
+/** Render a TOML string array one item per line (trailing comma — valid TOML). */
+function tomlStringArray(items: readonly string[]): string {
+  if (!items.length) return "[]";
+  return `[\n${items.map((item) => `  ${JSON.stringify(item)},`).join("\n")}\n]`;
+}
 
-  const claudeCommand = `claude mcp add kozocom-google --env GOOGLE_OAUTH_CREDENTIALS=${shellQuote(
+function codexSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
+  const lines = [
+    `[mcp_servers.${SERVER_KEY}]`,
+    `command = ${JSON.stringify(command)}`,
+    `args = ${JSON.stringify(args)}`,
+    `env = { GOOGLE_OAUTH_CREDENTIALS = ${JSON.stringify(credentialsPath)} }`,
+  ];
+  if (safeMode) {
+    // Codex gates tools natively via enabled_tools / disabled_tools.
+    lines.push(`enabled_tools = ${tomlStringArray(READ_ONLY_TOOL_NAMES)}`);
+    lines.push(`disabled_tools = ${tomlStringArray(DANGEROUS_TOOL_NAMES)}`);
+  }
+  return lines.join("\n");
+}
+
+function claudeSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
+  const add = `claude mcp add ${SERVER_KEY} --env GOOGLE_OAUTH_CREDENTIALS=${shellQuote(
     credentialsPath,
   )} -- ${[command, ...args].map(shellQuote).join(" ")}`;
+  if (!safeMode) return add;
+  // Claude Code gates MCP tools via permission rules in .claude/settings.json.
+  const deny = JSON.stringify(
+    { permissions: { deny: DANGEROUS_TOOL_NAMES.map((name) => `mcp__${SERVER_KEY}__${name}`) } },
+    null,
+    2,
+  );
+  return `${add}\n\nThen deny the dangerous tools in .claude/settings.json:\n\n${deny}`;
+}
 
-  const copilot = JSON.stringify(
+function copilotSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
+  return JSON.stringify(
     {
       servers: {
-        "kozocom-google": {
+        [SERVER_KEY]: {
           type: "stdio",
           command,
           args,
           env: { GOOGLE_OAUTH_CREDENTIALS: credentialsPath },
+          // VS Code has no per-tool config key, so the read-only set is named
+          // here for clarity; toggle the rest off in the Copilot tools picker.
+          ...(safeMode ? { tools: [...READ_ONLY_TOOL_NAMES] } : {}),
         },
       },
     },
     null,
     2,
   );
+}
+
+export function mcpConfigSnippet({
+  client,
+  command = "npx",
+  args = ["-y", PACKAGE_NAME],
+  credentialsPath = CLIENT_SECRET_PATH,
+  safeMode = false,
+}: McpSnippetOptions): string {
+  const codex = codexSnippet(command, args, credentialsPath, safeMode);
+  const claude = claudeSnippet(command, args, credentialsPath, safeMode);
+  const copilot = copilotSnippet(command, args, credentialsPath, safeMode);
 
   const sections: Record<ClientName, string> = {
     codex: `Codex (~/.codex/config.toml):\n\n${codex}`,
-    claude: `Claude Code:\n\n${claudeCommand}`,
+    claude: `Claude Code:\n\n${claude}`,
     copilot: `GitHub Copilot / VS Code (.vscode/mcp.json or global mcp.json):\n\n${copilot}`,
-    all: `Codex (~/.codex/config.toml):\n\n${codex}\n\nClaude Code:\n\n${claudeCommand}\n\nGitHub Copilot / VS Code (.vscode/mcp.json or global mcp.json):\n\n${copilot}`,
+    all: `Codex (~/.codex/config.toml):\n\n${codex}\n\nClaude Code:\n\n${claude}\n\nGitHub Copilot / VS Code (.vscode/mcp.json or global mcp.json):\n\n${copilot}`,
   };
 
   return sections[client];
 }
 
-function parseClient(value: string | undefined): ClientName | undefined {
+interface ConfigReportOptions {
+  client: ClientName;
+  /** Disable dangerous (destructive) tools in the emitted config. Default true. */
+  safeMode?: boolean;
+}
+
+/**
+ * The full text printed by the `config` command: the MCP snippet plus, in safe
+ * mode, a note listing the read-only tools that stay enabled and the dangerous
+ * tools that are disabled.
+ */
+export function configReport({ client, safeMode = true }: ConfigReportOptions): string {
+  const snippet = mcpConfigSnippet({ client, safeMode });
+  if (!safeMode) return snippet;
+  return `${snippet}\n\nEnabled (read-only) tools:\n${bulletList(
+    READ_ONLY_TOOL_NAMES,
+  )}\n\nDisabled (dangerous) tools:\n${bulletList(DANGEROUS_TOOL_NAMES)}`;
+}
+
+function bulletList(names: readonly string[]): string {
+  return names.map((name) => `  - ${name}`).join("\n");
+}
+
+export type { ClientName, SetupOptions };
+
+export function parseClient(value: string | undefined): ClientName | undefined {
   if (!value) return undefined;
   if (value === "codex" || value === "claude" || value === "copilot" || value === "all") return value;
   throw new Error(`Unknown client "${value}". Use codex, claude, copilot, or all.`);
-}
-
-export function parseSetupArgs(args: readonly string[]): SetupOptions {
-  const options: SetupOptions = {};
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    switch (arg) {
-      case "--client":
-        if (!args[i + 1]) throw new Error("--client requires codex, claude, copilot, or all.");
-        options.client = parseClient(args[i + 1]);
-        i += 1;
-        break;
-      case "--yes":
-      case "-y":
-        options.yes = true;
-        break;
-      case "--login":
-        options.login = true;
-        break;
-      case "--no-login":
-        options.login = false;
-        break;
-      default:
-        throw new Error(`Unknown setup option "${arg}".`);
-    }
-  }
-  return options;
 }
 
 async function prompt(question: string, fallback: string): Promise<string> {

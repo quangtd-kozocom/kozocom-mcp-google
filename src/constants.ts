@@ -29,3 +29,13 @@ export const TOKEN_PATH = process.env.GOOGLE_OAUTH_TOKEN ?? join(CONFIG_DIR, "to
 
 /** Maximum characters returned in a single tool response before truncation. */
 export const CHARACTER_LIMIT = 25000;
+
+/**
+ * Env var that, when set to "1", runs the server in safe mode: irreversible,
+ * destructive tools (delete/clear) are not registered. The `config` CLI command
+ * emits this in the generated MCP config so AI clients can't destroy data.
+ */
+export const SAFE_MODE_ENV = "KOZOCOM_MCP_SAFE_MODE";
+
+/** Whether this process is running with dangerous tools disabled. */
+export const SAFE_MODE = process.env[SAFE_MODE_ENV] === "1";

@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { mcpConfigSnippet, parseSetupArgs } from "./setup.js";
+import { configReport, mcpConfigSnippet, parseClient } from "./setup.js";
+import { DANGEROUS_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from "./tools/google.js";
 
-describe("parseSetupArgs", () => {
-  it("parses setup options", () => {
-    expect(parseSetupArgs(["--client", "codex", "--no-login", "--yes"])).toEqual({
-      client: "codex",
-      login: false,
-      yes: true,
-    });
+describe("parseClient", () => {
+  it("accepts known clients", () => {
+    expect(parseClient("codex")).toBe("codex");
+    expect(parseClient("all")).toBe("all");
+    expect(parseClient(undefined)).toBeUndefined();
   });
 
   it("rejects unknown clients", () => {
-    expect(() => parseSetupArgs(["--client", "unknown"])).toThrow(
+    expect(() => parseClient("unknown")).toThrow(
       'Unknown client "unknown". Use codex, claude, copilot, or all.',
     );
   });
@@ -43,5 +42,90 @@ describe("mcpConfigSnippet", () => {
         },
       },
     });
+  });
+
+  it("omits tool-gating when not in safe mode", () => {
+    const snippet = mcpConfigSnippet({ client: "all", credentialsPath: "/tmp/cs.json" });
+    expect(snippet).not.toContain("disabled_tools");
+    expect(snippet).not.toContain("enabled_tools");
+  });
+
+  it("emits Codex enabled_tools / disabled_tools in safe mode", () => {
+    const snippet = mcpConfigSnippet({ client: "codex", credentialsPath: "/tmp/cs.json", safeMode: true });
+    for (const name of READ_ONLY_TOOL_NAMES) {
+      expect(snippet).toContain(`enabled_tools`);
+      expect(snippet).toContain(`"${name}"`);
+    }
+    expect(snippet).toContain("disabled_tools");
+    for (const name of DANGEROUS_TOOL_NAMES) {
+      expect(snippet).toContain(`"${name}"`);
+    }
+  });
+
+  it("emits a Claude permission deny list in safe mode", () => {
+    const snippet = mcpConfigSnippet({ client: "claude", credentialsPath: "/tmp/cs.json", safeMode: true });
+    expect(snippet).toContain("permissions");
+    for (const name of DANGEROUS_TOOL_NAMES) {
+      expect(snippet).toContain(`mcp__kozocom-google__${name}`);
+    }
+  });
+
+  it("names the read-only tool set for Copilot in safe mode", () => {
+    const snippet = mcpConfigSnippet({ client: "copilot", credentialsPath: "/tmp/cs.json", safeMode: true });
+    const json = JSON.parse(snippet.split("\n\n")[1] ?? "");
+    expect(json.servers["kozocom-google"].tools).toEqual([...READ_ONLY_TOOL_NAMES]);
+  });
+});
+
+describe("danger classification", () => {
+  it("treats only read-only tools as enabled", () => {
+    expect(new Set(READ_ONLY_TOOL_NAMES)).toEqual(
+      new Set([
+        "google_auth_status",
+        "drive_list_files",
+        "drive_get_file",
+        "drive_download_file",
+        "sheets_get_spreadsheet",
+        "sheets_read_range",
+        "sheets_read_ranges",
+      ]),
+    );
+  });
+
+  it("treats every mutating tool (incl. login/logout) as dangerous", () => {
+    expect(new Set(DANGEROUS_TOOL_NAMES)).toEqual(
+      new Set([
+        "google_login",
+        "google_logout",
+        "drive_create_folder",
+        "drive_upload_file",
+        "drive_update_file",
+        "drive_copy_file",
+        "drive_delete_file",
+        "drive_share_file",
+        "sheets_create_spreadsheet",
+        "sheets_write_range",
+        "sheets_append_rows",
+        "sheets_clear_range",
+        "sheets_add_sheet",
+        "sheets_delete_sheet",
+      ]),
+    );
+  });
+});
+
+describe("configReport", () => {
+  it("lists enabled and disabled tools in safe mode", () => {
+    const report = configReport({ client: "claude" });
+    expect(report).toContain("Enabled (read-only) tools:");
+    expect(report).toContain("Disabled (dangerous) tools:");
+    for (const name of [...READ_ONLY_TOOL_NAMES, ...DANGEROUS_TOOL_NAMES]) {
+      expect(report).toContain(name);
+    }
+  });
+
+  it("omits the tool note when dangerous tools are kept", () => {
+    const report = configReport({ client: "claude", safeMode: false });
+    expect(report).not.toContain("Disabled (dangerous) tools:");
   });
 });

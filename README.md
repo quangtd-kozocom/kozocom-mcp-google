@@ -25,8 +25,17 @@ Or use the installer script:
 curl -fsSL https://raw.githubusercontent.com/kozocom/kozocom-mcp/main/scripts/install.sh | sh
 ```
 
-`kozocom-mcp setup` checks the config directory, verifies the OAuth client secret, optionally
-runs Google login, and prints MCP config for Codex, Claude Code, and VS Code Copilot.
+The CLI (built on `commander`) has three commands:
+
+- `kozocom-mcp login` — sign in to Google and cache the OAuth token.
+- `kozocom-mcp setup` — check the config directory, verify the OAuth client secret, optionally
+  run Google login, and print MCP config for Codex, Claude Code, and VS Code Copilot.
+- `kozocom-mcp config [--client codex|claude|copilot|all]` — print MCP config with the **dangerous
+  (mutating) tools disabled**, leaving only the read-only tools enabled. Each client uses its own
+  mechanism: Codex `enabled_tools`/`disabled_tools`, a Claude Code `permissions.deny` list, and a
+  named read-only `tools` set for VS Code Copilot. Pass `--include-dangerous` to keep every tool.
+
+Run `kozocom-mcp` (or `start`) with no command to launch the server over stdio.
 
 ### From source
 
@@ -45,6 +54,7 @@ First, follow **[SETUP.md](./SETUP.md)** to create the Google Cloud OAuth creden
 | ---------------- | -------------------------------------------- |
 | `pnpm setup`     | Check setup, sign in, and print MCP config   |
 | `pnpm login`     | Sign in to Google (run once after `build`)   |
+| `pnpm run config`| Print MCP config with dangerous tools disabled |
 | `pnpm dev`       | Run the server with hot reload (`tsx watch`) |
 | `pnpm build`     | Compile TypeScript to `dist/`                |
 | `pnpm start`     | Run the compiled server over stdio           |
