@@ -45,11 +45,10 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Build with embedded OAuth client
+      - name: Build with embedded OAuth client id
         run: pnpm build
         env:
           QUANG_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.QUANG_GOOGLE_OAUTH_CLIENT_ID }}
-          QUANG_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.QUANG_GOOGLE_OAUTH_CLIENT_SECRET }}
 
       - name: Publish to npm
         run: npm publish

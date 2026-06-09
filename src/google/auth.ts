@@ -3,7 +3,14 @@ import type { AddressInfo } from "node:net";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import open from "open";
 import { Auth, google } from "googleapis";
-import { CLIENT_SECRET_PATH, CONFIG_DIR, SCOPES, TOKEN_PATH } from "../config/constants.js";
+import {
+  CLIENT_SECRET_PATH,
+  CONFIG_DIR,
+  PROXY_SHARED_KEY,
+  SCOPES,
+  TOKEN_PATH,
+  TOKEN_PROXY_URL,
+} from "../config/constants.js";
 import { NotAuthenticatedError } from "../core/result.js";
 import { EMBEDDED_OAUTH_CLIENT } from "./generated/oauth-client.js";
 
@@ -110,6 +117,49 @@ function createBaseClient(secret: ClientSecret, redirectUri?: string): OAuth2Cli
   });
 }
 
+/** Raw token response from Google, relayed verbatim by the proxy. */
+interface GoogleTokenResponse {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+  id_token?: string;
+  error?: string;
+  error_description?: string;
+}
+
+/**
+ * Exchange an auth code or refresh token for credentials via the token proxy.
+ * The proxy holds the Google client_secret (Desktop clients require it even with
+ * PKCE); we send only the grant + PKCE params, never a secret.
+ */
+async function proxyTokenExchange(body: Record<string, string>): Promise<Credentials> {
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_PROXY_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-proxy-key": PROXY_SHARED_KEY },
+      body: JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw new Error(`Could not reach the OAuth token proxy at ${TOKEN_PROXY_URL}.`, { cause });
+  }
+  const data = (await res.json().catch(() => ({}))) as GoogleTokenResponse;
+  if (!res.ok || data.error || !data.access_token) {
+    const detail = data.error_description ?? data.error ?? `HTTP ${res.status}`;
+    throw new Error(`Token exchange failed: ${detail}`);
+  }
+  return {
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+    scope: data.scope,
+    token_type: data.token_type,
+    id_token: data.id_token,
+    expiry_date: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
+  };
+}
+
 /** Fetch the signed-in user's email, best-effort. */
 async function fetchEmail(client: OAuth2Client): Promise<string | undefined> {
   try {
@@ -134,10 +184,24 @@ export async function getAuthenticatedClient(): Promise<OAuth2Client> {
   }
   const client = createBaseClient(secret);
   client.setCredentials(token);
-  // google-auth-library emits "tokens" when it refreshes; persist merged result.
-  client.on("tokens", (fresh) => {
-    void saveToken({ ...token, ...fresh });
-  });
+  // Refresh through the proxy: Google needs the client_secret to refresh a
+  // confidential (Desktop) client, and we don't hold it. Setting refreshHandler
+  // makes google-auth-library call us instead of doing its own secret-based
+  // refresh. Persist the refreshed access token so it survives restarts.
+  client.refreshHandler = async () => {
+    if (!token.refresh_token) {
+      throw new NotAuthenticatedError("No refresh token cached — run `quang-mcp auth login` again.");
+    }
+    const fresh = await proxyTokenExchange({
+      grant_type: "refresh_token",
+      refresh_token: token.refresh_token,
+    });
+    await saveToken({ ...token, ...fresh });
+    if (!fresh.access_token || fresh.expiry_date == null) {
+      throw new Error("Token proxy returned no access token on refresh.");
+    }
+    return { access_token: fresh.access_token, expiry_date: fresh.expiry_date };
+  };
   return client;
 }
 
@@ -186,7 +250,12 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
         try {
           if (authError) throw new Error(`Authorization denied: ${authError}`);
           if (!code || !client) throw new Error("Missing authorization code in callback.");
-          const { tokens } = await client.getToken({ code, codeVerifier, redirect_uri: redirectUri });
+          const tokens = await proxyTokenExchange({
+            grant_type: "authorization_code",
+            code,
+            code_verifier: codeVerifier,
+            redirect_uri: redirectUri,
+          });
           client.setCredentials(tokens);
           await saveToken(tokens);
           const email = await fetchEmail(client);

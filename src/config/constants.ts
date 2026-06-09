@@ -32,6 +32,26 @@ export const CLIENT_SECRET_PATH =
 /** Path to the cached OAuth token (access + refresh). */
 export const TOKEN_PATH = process.env.GOOGLE_OAUTH_TOKEN ?? join(CONFIG_DIR, "token.json");
 
+/**
+ * OAuth token-exchange proxy. Google "Desktop" clients are confidential — the
+ * token endpoint requires `client_secret` even with PKCE. To keep the secret out
+ * of the published package, the CLI does the PKCE authorize step itself and posts
+ * the resulting `code` (and later, refresh tokens) to this Worker, which holds the
+ * secret and completes the exchange. See the `quang-mcp-auth-proxy` repo.
+ */
+export const TOKEN_PROXY_URL =
+  process.env.QUANG_MCP_TOKEN_PROXY_URL ??
+  "https://quang-mcp-auth-proxy.getting-started-worker.workers.dev/token";
+
+/**
+ * Shared deterrent key sent to the proxy in `x-proxy-key`. This ships in the
+ * package, so it is NOT a secret — just a casual-abuse speed bump. The real
+ * protection is PKCE (binds each auth code to the CLI that started the flow).
+ */
+export const PROXY_SHARED_KEY =
+  process.env.QUANG_MCP_PROXY_KEY ??
+  "f80350f60e2c7950b72f3041c673d1194d45efa38217237ecc7bf87530f093d5";
+
 /** Maximum characters returned in a single tool response before truncation. */
 export const CHARACTER_LIMIT = 25000;
 

@@ -90,7 +90,7 @@ vi.mock("./generated/oauth-client.js", () => ({
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { clearToken, loadToken, readClientSecret, runLoginFlow, saveToken } from "./auth.js";
-import { TOKEN_PATH } from "../config/constants.js";
+import { TOKEN_PATH, TOKEN_PROXY_URL } from "../config/constants.js";
 import { NotAuthenticatedError } from "../core/result.js";
 
 const mockReadFile = vi.mocked(readFile);
@@ -101,6 +101,7 @@ const mockRm = vi.mocked(rm);
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   embeddedOAuthMock.value = null;
   googleMock.constructorArgs.length = 0;
   googleMock.authUrlOptions.length = 0;
@@ -199,11 +200,38 @@ describe("readClientSecret", () => {
   });
 });
 
+/** Stub global fetch: proxy URL → canned response, everything else (the loopback
+ *  callback) → real fetch. Returns the captured proxy request bodies. */
+function stubProxy(response: Response): { calls: { body: unknown }[]; realFetch: typeof fetch } {
+  const realFetch = globalThis.fetch;
+  const calls: { body: unknown }[] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === TOKEN_PROXY_URL) {
+      calls.push({ body: JSON.parse(String(init?.body)) });
+      return Promise.resolve(response.clone());
+    }
+    return realFetch(input, init);
+  });
+  return { calls, realFetch };
+}
+
 describe("runLoginFlow", () => {
-  it("uses PKCE with a public OAuth client", async () => {
+  it("does PKCE then exchanges the code via the token proxy (no secret)", async () => {
     mockReadFile.mockResolvedValue(JSON.stringify({ installed: { client_id: "cid" } }));
     mockMkdir.mockResolvedValue(undefined as never);
     mockWriteFile.mockResolvedValue();
+    const { calls, realFetch } = stubProxy(
+      new Response(
+        JSON.stringify({
+          access_token: "access",
+          refresh_token: "refresh",
+          scope: "scope-a scope-b",
+          token_type: "Bearer",
+          expires_in: 3599,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
 
     const result = await runLoginFlow({
       openBrowser: false,
@@ -214,7 +242,7 @@ describe("runLoginFlow", () => {
         expect(url.searchParams.get("code_challenge_method")).toBe("S256");
         const redirectUri = url.searchParams.get("redirect_uri");
         if (!redirectUri) throw new Error("Missing redirect_uri.");
-        void fetch(`${redirectUri}?code=auth-code`);
+        void realFetch(`${redirectUri}?code=auth-code`);
       },
     });
 
@@ -226,10 +254,34 @@ describe("runLoginFlow", () => {
         clientAuthentication: "None",
       },
     ]);
-    expect(googleMock.tokenOptions[0]).toEqual({
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({
+      grant_type: "authorization_code",
       code: "auth-code",
-      codeVerifier: "verifier",
+      code_verifier: "verifier",
       redirect_uri: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/oauth2callback$/),
     });
+  });
+
+  it("rejects when the proxy/Google returns a token error", async () => {
+    mockReadFile.mockResolvedValue(JSON.stringify({ installed: { client_id: "cid" } }));
+    const { realFetch } = stubProxy(
+      new Response(JSON.stringify({ error: "invalid_grant", error_description: "Bad Request" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      runLoginFlow({
+        openBrowser: false,
+        timeoutMs: 1_000,
+        onUrl: (authUrl) => {
+          const redirectUri = new URL(authUrl).searchParams.get("redirect_uri");
+          if (!redirectUri) throw new Error("Missing redirect_uri.");
+          void realFetch(`${redirectUri}?code=auth-code`);
+        },
+      }),
+    ).rejects.toThrow(/Bad Request/);
   });
 });
