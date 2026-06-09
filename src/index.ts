@@ -10,7 +10,7 @@ export async function startServer(): Promise<void> {
     name: SERVER_NAME,
     version: SERVER_VERSION,
   });
-  registerGoogleTools(server, { safeMode: SAFE_MODE });
+  await registerGoogleTools(server, { safeMode: SAFE_MODE });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

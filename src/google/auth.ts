@@ -37,7 +37,7 @@ export interface LoginResult {
 }
 
 const SUCCESS_HTML = (email?: string) =>
-  `<!doctype html><html><body style="font-family:system-ui;text-align:center;padding:3rem">
+  `<!doctype html><html><head><meta charset="utf-8"></head><body style="font-family:system-ui;text-align:center;padding:3rem">
    <h2>✅ Signed in${email ? ` as ${email}` : ""}</h2>
    <p>You can close this tab and return to your terminal / MCP client.</p>
    </body></html>`;
@@ -180,7 +180,7 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
           client.setCredentials(tokens);
           await saveToken(tokens);
           const email = await fetchEmail(client);
-          res.writeHead(200, { "Content-Type": "text/html" }).end(SUCCESS_HTML(email));
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(SUCCESS_HTML(email));
           finish();
           resolve({ email, scopes: tokens.scope?.split(" ") ?? SCOPES });
         } catch (err) {
@@ -214,6 +214,10 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
         access_type: "offline",
         prompt: "consent",
         scope: SCOPES,
+        // Force per-scope checkboxes so the user can grant Drive and Sheets
+        // independently. Desktop/pre-2019 clients don't get them by default;
+        // a no-op once Google has auto-enabled granular consent for the client.
+        enable_granular_consent: true,
       });
       onUrl?.(authUrl);
       if (openBrowser) {

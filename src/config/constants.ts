@@ -5,17 +5,22 @@ import { join } from "node:path";
 export const SERVER_NAME = "kozocom-google-mcp-server";
 export const SERVER_VERSION = "0.1.0";
 
+/** Full read/write Drive scope — gates the `drive_*` tools. */
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+/** Full read/write Sheets scope — gates the `sheets_*` tools. */
+export const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+
+/** Sign-in scopes, always requested. Let us show which account is signed in. */
+export const IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email", "openid"];
+
 /**
  * OAuth scopes requested at login. Full read/write for both Drive and Sheets.
- * Changing these requires re-running the login flow (delete the cached token).
+ * Google's granular consent screen lets the user grant only some of these; the
+ * server then registers only the tools whose scope was actually granted (see
+ * `selectGoogleTools`). Changing these requires re-running login (delete the
+ * cached token first).
  */
-export const SCOPES = [
-  "https://www.googleapis.com/auth/drive",
-  "https://www.googleapis.com/auth/spreadsheets",
-  // Returned automatically; lets us show which account is signed in.
-  "https://www.googleapis.com/auth/userinfo.email",
-  "openid",
-];
+export const SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE, ...IDENTITY_SCOPES];
 
 /** Directory holding the OAuth client secret and cached token. */
 export const CONFIG_DIR = process.env.KOZOCOM_MCP_DIR ?? join(homedir(), ".kozocom-mcp");
