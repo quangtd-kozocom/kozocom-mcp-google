@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stderr as output } from "node:process";
 import { CLIENT_SECRET_PATH, CONFIG_DIR } from "./constants.js";
 import { getAuthStatus } from "./auth.js";
+import { EMBEDDED_OAUTH_CLIENT } from "./generated/oauth-client.js";
 import { DANGEROUS_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from "./tools/google.js";
 
 const SERVER_KEY = "kozocom-google";
@@ -18,7 +19,7 @@ interface McpSnippetOptions {
   client: ClientName;
   command?: string;
   args?: string[];
-  credentialsPath?: string;
+  credentialsPath?: string | null;
   /**
    * When true, the emitted config disables the dangerous (mutating) tools using
    * each client's own mechanism, leaving only the read-only tools enabled.
@@ -26,7 +27,7 @@ interface McpSnippetOptions {
   safeMode?: boolean;
 }
 
-const PACKAGE_NAME = "kozocom-mcp-google";
+const PACKAGE_NAME = "@quangtd-kozocom/kozocom-mcp-google";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -55,13 +56,15 @@ function tomlStringArray(items: readonly string[]): string {
   return `[\n${items.map((item) => `  ${JSON.stringify(item)},`).join("\n")}\n]`;
 }
 
-function codexSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
+function codexSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
   const lines = [
     `[mcp_servers.${SERVER_KEY}]`,
     `command = ${JSON.stringify(command)}`,
     `args = ${JSON.stringify(args)}`,
-    `env = { GOOGLE_OAUTH_CREDENTIALS = ${JSON.stringify(credentialsPath)} }`,
   ];
+  if (credentialsPath) {
+    lines.push(`env = { GOOGLE_OAUTH_CREDENTIALS = ${JSON.stringify(credentialsPath)} }`);
+  }
   if (safeMode) {
     // Codex gates tools natively via enabled_tools / disabled_tools.
     lines.push(`enabled_tools = ${tomlStringArray(READ_ONLY_TOOL_NAMES)}`);
@@ -70,10 +73,9 @@ function codexSnippet(command: string, args: string[], credentialsPath: string, 
   return lines.join("\n");
 }
 
-function claudeSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
-  const add = `claude mcp add ${SERVER_KEY} --env GOOGLE_OAUTH_CREDENTIALS=${shellQuote(
-    credentialsPath,
-  )} -- ${[command, ...args].map(shellQuote).join(" ")}`;
+function claudeSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
+  const env = credentialsPath ? `--env GOOGLE_OAUTH_CREDENTIALS=${shellQuote(credentialsPath)} ` : "";
+  const add = `claude mcp add ${SERVER_KEY} ${env}-- ${[command, ...args].map(shellQuote).join(" ")}`;
   if (!safeMode) return add;
   // Claude Code gates MCP tools via permission rules in .claude/settings.json.
   const deny = JSON.stringify(
@@ -84,7 +86,7 @@ function claudeSnippet(command: string, args: string[], credentialsPath: string,
   return `${add}\n\nThen deny the dangerous tools in .claude/settings.json:\n\n${deny}`;
 }
 
-function copilotSnippet(command: string, args: string[], credentialsPath: string, safeMode: boolean): string {
+function copilotSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
   return JSON.stringify(
     {
       servers: {
@@ -92,7 +94,7 @@ function copilotSnippet(command: string, args: string[], credentialsPath: string
           type: "stdio",
           command,
           args,
-          env: { GOOGLE_OAUTH_CREDENTIALS: credentialsPath },
+          ...(credentialsPath ? { env: { GOOGLE_OAUTH_CREDENTIALS: credentialsPath } } : {}),
           // VS Code has no per-tool config key, so the read-only set is named
           // here for clarity; toggle the rest off in the Copilot tools picker.
           ...(safeMode ? { tools: [...READ_ONLY_TOOL_NAMES] } : {}),
@@ -108,7 +110,7 @@ export function mcpConfigSnippet({
   client,
   command = "npx",
   args = ["-y", PACKAGE_NAME],
-  credentialsPath = CLIENT_SECRET_PATH,
+  credentialsPath = null,
   safeMode = false,
 }: McpSnippetOptions): string {
   const codex = codexSnippet(command, args, credentialsPath, safeMode);
@@ -179,11 +181,15 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   console.error(`OAuth client secret: ${CLIENT_SECRET_PATH}`);
 
   if (!(await exists(CLIENT_SECRET_PATH))) {
-    console.error(
-      "\nNo OAuth client secret was found. Create a Google OAuth Desktop app client, then save the downloaded JSON here:",
-    );
-    console.error(`  ${CLIENT_SECRET_PATH}`);
-    console.error("\nSee SETUP.md for the Google Cloud click-through.");
+    if (EMBEDDED_OAUTH_CLIENT) {
+      console.error("OAuth client secret: using embedded internal Desktop OAuth client.");
+    } else {
+      console.error(
+        "\nNo OAuth client secret was found. Install a package built with the embedded internal OAuth client, or save a Google OAuth Desktop app client here:",
+      );
+      console.error(`  ${CLIENT_SECRET_PATH}`);
+      console.error("\nSee SETUP.md for details.");
+    }
   } else if (!(await isFile(CLIENT_SECRET_PATH))) {
     throw new Error(`OAuth client secret path exists but is not a file: ${CLIENT_SECRET_PATH}`);
   } else {

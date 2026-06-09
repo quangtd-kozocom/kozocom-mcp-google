@@ -23,7 +23,7 @@ describe("mcpConfigSnippet", () => {
         client: "codex",
         credentialsPath: "/tmp/client_secret.json",
       }),
-    ).toContain('args = ["-y","kozocom-mcp-google"]');
+    ).toContain('args = ["-y","@quangtd-kozocom/kozocom-mcp-google"]');
   });
 
   it("builds VS Code Copilot JSON", () => {
@@ -37,11 +37,16 @@ describe("mcpConfigSnippet", () => {
         "kozocom-google": {
           type: "stdio",
           command: "npx",
-          args: ["-y", "kozocom-mcp-google"],
+          args: ["-y", "@quangtd-kozocom/kozocom-mcp-google"],
           env: { GOOGLE_OAUTH_CREDENTIALS: "/tmp/client_secret.json" },
         },
       },
     });
+  });
+
+  it("omits the credentials env by default for embedded-client packages", () => {
+    const snippet = mcpConfigSnippet({ client: "codex" });
+    expect(snippet).not.toContain("GOOGLE_OAUTH_CREDENTIALS");
   });
 
   it("omits tool-gating when not in safe mode", () => {
