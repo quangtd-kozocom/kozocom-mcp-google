@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.5.2",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/quangtd-kozocom/quang-mcp-google.git"
+    "url": "git+https://github.com/quangtd-kozocom/terra-mcp-google.git"
   },
   "publishConfig": {
     "access": "public"
