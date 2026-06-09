@@ -105,15 +105,16 @@ describe("danger classification", () => {
         "drive_update_file",
         "drive_copy_file",
         "drive_delete_file",
-        "drive_share_file",
         "sheets_create_spreadsheet",
         "sheets_write_range",
+        "sheets_write_ranges",
         "sheets_append_rows",
         "sheets_clear_range",
         "sheets_add_sheet",
         "sheets_delete_sheet",
         "sheets_format_cells",
         "sheets_set_data_validation",
+        "sheets_batch_update",
       ]),
     );
   });

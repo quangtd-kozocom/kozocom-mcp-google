@@ -36,6 +36,13 @@ export interface AppendResult {
   updatedCells?: number | null;
 }
 
+export interface BatchWriteResult {
+  totalUpdatedRows?: number | null;
+  totalUpdatedColumns?: number | null;
+  totalUpdatedCells?: number | null;
+  responses: WriteResult[];
+}
+
 /**
  * Anti-corruption layer over the Sheets v4 API: every Google call lives here so
  * tool handlers deal in plain, intention-revealing shapes. Mirrors
@@ -132,6 +139,31 @@ export class SheetsAdapter {
     };
   }
 
+  async batchWriteRanges(args: {
+    spreadsheetId: string;
+    data: { range: string; values: CellValue[][] }[];
+    valueInputOption: string;
+  }): Promise<BatchWriteResult> {
+    const { data } = await this.sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: args.spreadsheetId,
+      requestBody: {
+        valueInputOption: args.valueInputOption,
+        data: args.data.map((d) => ({ range: d.range, values: d.values })),
+      },
+    });
+    return {
+      totalUpdatedRows: data.totalUpdatedRows,
+      totalUpdatedColumns: data.totalUpdatedColumns,
+      totalUpdatedCells: data.totalUpdatedCells,
+      responses: (data.responses ?? []).map((r) => ({
+        updatedRange: r.updatedRange,
+        updatedRows: r.updatedRows,
+        updatedColumns: r.updatedColumns,
+        updatedCells: r.updatedCells,
+      })),
+    };
+  }
+
   async appendRows(args: {
     spreadsheetId: string;
     range: string;
@@ -221,5 +253,17 @@ export class SheetsAdapter {
       spreadsheetId: args.spreadsheetId,
       requestBody: { requests: [{ setDataValidation: { range: args.range, rule: args.rule } }] },
     });
+  }
+
+  /** Escape hatch: send raw batchUpdate requests straight through to the API. */
+  async batchUpdate(args: {
+    spreadsheetId: string;
+    requests: Record<string, unknown>[];
+  }): Promise<sheets_v4.Schema$Response[]> {
+    const { data } = await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: args.spreadsheetId,
+      requestBody: { requests: args.requests as unknown as sheets_v4.Schema$Request[] },
+    });
+    return data.replies ?? [];
   }
 }

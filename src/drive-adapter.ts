@@ -192,30 +192,6 @@ export class DriveFileAdapter {
     });
     return data;
   }
-
-  async shareFile(args: {
-    fileId: string;
-    role: string;
-    type: string;
-    emailAddress?: string;
-    domain?: string;
-    sendNotification: boolean;
-    message?: string;
-  }): Promise<drive_v3.Schema$Permission> {
-    const { data } = await this.drive.permissions.create({
-      fileId: args.fileId,
-      sendNotificationEmail: args.sendNotification,
-      emailMessage: args.message,
-      supportsAllDrives: true,
-      requestBody: {
-        role: args.role,
-        type: args.type,
-        ...(args.emailAddress ? { emailAddress: args.emailAddress } : {}),
-        ...(args.domain ? { domain: args.domain } : {}),
-      },
-    });
-    return data;
-  }
 }
 
 function defaultExportMime(mimeType: string): string {

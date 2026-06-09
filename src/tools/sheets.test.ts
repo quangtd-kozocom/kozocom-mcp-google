@@ -5,13 +5,18 @@ vi.mock("../google.js", () => ({ getGoogleClients: vi.fn() }));
 
 import {
   sheetsAddSheet,
+  sheetsAppendRows,
+  sheetsBatchUpdate,
+  sheetsClearRange,
   sheetsCreateSpreadsheet,
   sheetsDeleteSheet,
   sheetsFormatCells,
   sheetsGetSpreadsheet,
   sheetsReadRange,
+  sheetsReadRanges,
   sheetsSetDataValidation,
   sheetsWriteRange,
+  sheetsWriteRanges,
 } from "./sheets.js";
 
 function fakeSheets() {
@@ -24,6 +29,7 @@ function fakeSheets() {
         get: vi.fn(),
         batchGet: vi.fn(),
         update: vi.fn(),
+        batchUpdate: vi.fn(),
         append: vi.fn(),
         clear: vi.fn(),
       },
@@ -201,5 +207,206 @@ describe("sheetsSetDataValidation", () => {
       strict: true,
       showCustomUi: true,
     });
+  });
+});
+
+describe("sheetsWriteRanges", () => {
+  it("sends one values.batchUpdate and reports totals + per-range counts", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.batchUpdate.mockResolvedValue({
+      data: {
+        totalUpdatedCells: 3,
+        totalUpdatedRows: 2,
+        responses: [
+          { updatedRange: "Sheet1!A1:B1", updatedCells: 2 },
+          { updatedRange: "Sheet2!A1", updatedCells: 1 },
+        ],
+      },
+    });
+    const res = await sheetsWriteRanges(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      data: [
+        { range: "Sheet1!A1:B1", values: [["a", "b"]] },
+        { range: "Sheet2!A1", values: [["c"]] },
+      ],
+      value_input_option: "USER_ENTERED",
+    });
+    expect(sheets.spreadsheets.values.batchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({
+          valueInputOption: "USER_ENTERED",
+          data: [
+            { range: "Sheet1!A1:B1", values: [["a", "b"]] },
+            { range: "Sheet2!A1", values: [["c"]] },
+          ],
+        }),
+      }),
+    );
+    expect(res.structuredContent).toMatchObject({ total_updated_cells: 3 });
+    expect((res.structuredContent as { ranges: unknown[] }).ranges).toHaveLength(2);
+  });
+});
+
+describe("sheetsBatchUpdate", () => {
+  it("passes raw requests through and returns replies", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockResolvedValue({
+      data: { replies: [{ addSheet: { properties: { sheetId: 7 } } }] },
+    });
+    const res = await sheetsBatchUpdate(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      requests: [{ mergeCells: { mergeType: "MERGE_ALL" } }],
+      response_format: "json",
+    });
+    expect(sheets.spreadsheets.batchUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: { requests: [{ mergeCells: { mergeType: "MERGE_ALL" } }] },
+      }),
+    );
+    expect(res.structuredContent).toMatchObject({ reply_count: 1 });
+    expect(res.content[0].text).toContain('"sheetId": 7');
+  });
+});
+
+// Error paths: every handler surfaces (does not swallow) an API rejection; the
+// factory wrapper maps it to an isError result (covered by drive's "auth wrapper").
+describe("handlers surface API errors", () => {
+  const boom = { response: { status: 500 }, message: "boom" };
+
+  it("sheetsCreateSpreadsheet rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.create.mockRejectedValue(boom);
+    await expect(sheetsCreateSpreadsheet(asSheets(sheets), { title: "t" })).rejects.toBeDefined();
+  });
+
+  it("sheetsGetSpreadsheet rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.get.mockRejectedValue(boom);
+    await expect(
+      sheetsGetSpreadsheet(asSheets(sheets), { spreadsheet_id: "s1", response_format: "markdown" }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsReadRange rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.get.mockRejectedValue(boom);
+    await expect(
+      sheetsReadRange(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        range: "A1",
+        value_render_option: "FORMATTED_VALUE",
+        response_format: "markdown",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsReadRanges rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.batchGet.mockRejectedValue(boom);
+    await expect(
+      sheetsReadRanges(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        ranges: ["A1"],
+        value_render_option: "FORMATTED_VALUE",
+        response_format: "markdown",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsWriteRange rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.update.mockRejectedValue(boom);
+    await expect(
+      sheetsWriteRange(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        range: "A1",
+        values: [["x"]],
+        value_input_option: "RAW",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsWriteRanges rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsWriteRanges(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        data: [{ range: "A1", values: [["x"]] }],
+        value_input_option: "RAW",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsAppendRows rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.append.mockRejectedValue(boom);
+    await expect(
+      sheetsAppendRows(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        range: "A1",
+        values: [["x"]],
+        value_input_option: "RAW",
+        insert_data_option: "INSERT_ROWS",
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsClearRange rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.clear.mockRejectedValue(boom);
+    await expect(
+      sheetsClearRange(asSheets(sheets), { spreadsheet_id: "s1", range: "A1" }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsAddSheet rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsAddSheet(asSheets(sheets), { spreadsheet_id: "s1", title: "x" }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsDeleteSheet rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsDeleteSheet(asSheets(sheets), { spreadsheet_id: "s1", sheet_id: 1 }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsFormatCells rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsFormatCells(asSheets(sheets), { spreadsheet_id: "s1", ...grid, bold: true }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsSetDataValidation rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsSetDataValidation(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        ...grid,
+        values: ["a"],
+        strict: true,
+        show_dropdown: true,
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it("sheetsBatchUpdate rejects", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockRejectedValue(boom);
+    await expect(
+      sheetsBatchUpdate(asSheets(sheets), {
+        spreadsheet_id: "s1",
+        requests: [{ mergeCells: {} }],
+        response_format: "markdown",
+      }),
+    ).rejects.toBeDefined();
   });
 });

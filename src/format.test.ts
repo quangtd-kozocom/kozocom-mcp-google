@@ -58,14 +58,23 @@ describe("handleGoogleError", () => {
   });
 
   it.each([
+    [400, "Bad request"],
     [401, "sign in again"],
     [403, "Permission denied"],
     [404, "Not found"],
     [429, "Rate limit"],
+    [500, "temporarily unavailable"],
     [503, "temporarily unavailable"],
   ])("maps HTTP %s", (status, fragment) => {
     const msg = handleGoogleError({ response: { status }, message: "x" });
     expect(msg).toContain(fragment);
+  });
+
+  it("disambiguates 404 between missing and no-access, and includes detail", () => {
+    const msg = handleGoogleError({ response: { status: 404 }, message: "File not found: abc" });
+    expect(msg).toContain("does not exist");
+    expect(msg).toContain("lack access");
+    expect(msg).toContain("File not found: abc");
   });
 
   it("reads status from gaxios .code", () => {

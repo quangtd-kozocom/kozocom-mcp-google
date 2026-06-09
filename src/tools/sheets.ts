@@ -282,6 +282,57 @@ Returns: { updated_range, updated_rows, updated_columns, updated_cells }`,
   run: sheetsWriteRange,
 });
 
+const writeRangesInput = {
+  spreadsheet_id: z.string().min(1),
+  data: z
+    .array(z.object({ range: z.string().min(1), values: valuesSchema }))
+    .min(1)
+    .describe("Range/values pairs, each written to its own A1 range"),
+  value_input_option: valueInputOption,
+};
+
+export async function sheetsWriteRanges(
+  sheets: sheets_v4.Sheets,
+  args: ArgsOf<typeof writeRangesInput>,
+): Promise<ToolResult> {
+  const result = await new SheetsAdapter(sheets).batchWriteRanges({
+    spreadsheetId: args.spreadsheet_id,
+    data: args.data,
+    valueInputOption: args.value_input_option,
+  });
+  return toolResult(
+    `Updated ${result.totalUpdatedCells ?? 0} cells across ${result.responses.length} range(s).`,
+    {
+      total_updated_rows: result.totalUpdatedRows,
+      total_updated_columns: result.totalUpdatedColumns,
+      total_updated_cells: result.totalUpdatedCells,
+      ranges: result.responses.map((r) => ({
+        updated_range: r.updatedRange,
+        updated_rows: r.updatedRows,
+        updated_columns: r.updatedColumns,
+        updated_cells: r.updatedCells,
+      })),
+    },
+  );
+}
+
+const writeRangesTool = sheetsTool({
+  name: "sheets_write_ranges",
+  title: "Write multiple cell ranges",
+  description: `Overwrite several A1 ranges in one call (values.batchUpdate).
+
+Args:
+  - spreadsheet_id (string)
+  - data (array): [{ range: A1 string, values: CellValue[][] }, ...]
+  - value_input_option ('USER_ENTERED'|'RAW', default USER_ENTERED): applied to every range
+
+Returns: { total_updated_rows, total_updated_columns, total_updated_cells,
+  ranges:[{updated_range, updated_rows, updated_columns, updated_cells}] }`,
+  inputSchema: writeRangesInput,
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  run: sheetsWriteRanges,
+});
+
 const appendRowsInput = {
   spreadsheet_id: z.string().min(1),
   range: z.string().min(1),
@@ -553,6 +604,50 @@ Returns: { values }`,
   run: sheetsSetDataValidation,
 });
 
+const batchUpdateInput = {
+  spreadsheet_id: z.string().min(1),
+  requests: z
+    .array(z.record(z.string(), z.unknown()))
+    .min(1)
+    .describe("Raw Sheets API Request objects, each passed straight to batchUpdate"),
+  response_format: responseFormatSchema,
+};
+
+export async function sheetsBatchUpdate(
+  sheets: sheets_v4.Sheets,
+  args: ArgsOf<typeof batchUpdateInput>,
+): Promise<ToolResult> {
+  const replies = await new SheetsAdapter(sheets).batchUpdate({
+    spreadsheetId: args.spreadsheet_id,
+    requests: args.requests,
+  });
+  const output = { reply_count: replies.length, replies };
+  const text = formatResponse(
+    args.response_format,
+    output,
+    () => `Applied ${args.requests.length} request(s); received ${replies.length} repl${replies.length === 1 ? "y" : "ies"}.`,
+  );
+  return toolResult(text, output);
+}
+
+const batchUpdateTool = sheetsTool({
+  name: "sheets_batch_update",
+  title: "Run raw batchUpdate requests",
+  description: `Escape hatch: send raw Sheets API requests to spreadsheets.batchUpdate. Use for operations
+without a dedicated tool (mergeCells, updateBorders, sortRange, addConditionalFormatRule, freezing
+rows, etc.). Powerful and potentially destructive — a malformed request returns a Google 400.
+
+Args:
+  - spreadsheet_id (string)
+  - requests (object[]): raw Request objects, e.g. [{ "mergeCells": { "range": {...}, "mergeType": "MERGE_ALL" } }]
+  - response_format ('markdown'|'json', default markdown): 'json' to read the raw replies (e.g. a new sheetId)
+
+Returns: { reply_count, replies: [...] }`,
+  inputSchema: batchUpdateInput,
+  annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  run: sheetsBatchUpdate,
+});
+
 // ── Registration ────────────────────────────────────────────────────────────
 
 export const sheetsTools: readonly ToolRegistration[] = [
@@ -561,12 +656,14 @@ export const sheetsTools: readonly ToolRegistration[] = [
   readRangeTool,
   readRangesTool,
   writeRangeTool,
+  writeRangesTool,
   appendRowsTool,
   clearRangeTool,
   addSheetTool,
   deleteSheetTool,
   formatCellsTool,
   setDataValidationTool,
+  batchUpdateTool,
 ];
 
 export function registerSheetsTools(server: McpServer): void {

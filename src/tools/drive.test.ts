@@ -7,11 +7,14 @@ vi.mock("../google.js", () => ({
 
 import { getGoogleClients } from "../google.js";
 import {
+  driveCopyFile,
+  driveCreateFolder,
   driveDeleteFile,
   driveDownloadFile,
   driveGetFile,
   driveListFiles,
-  driveShareFile,
+  driveUpdateFile,
+  driveUploadFile,
   registerDriveTools,
 } from "./drive.js";
 
@@ -27,7 +30,6 @@ function fakeDrive() {
       copy: vi.fn(),
       delete: vi.fn(),
     },
-    permissions: { create: vi.fn() },
   };
 }
 
@@ -124,35 +126,74 @@ describe("driveDeleteFile", () => {
   });
 });
 
-describe("driveShareFile", () => {
-  it("requires an email for user shares", async () => {
+describe("driveUploadFile", () => {
+  it("errors when neither content nor local_path is given", async () => {
     const drive = fakeDrive();
-    const res = await driveShareFile(asDrive(drive), {
-      file_id: "1",
-      role: "reader",
-      type: "user",
-      send_notification: true,
-    });
+    const res = await driveUploadFile(asDrive(drive), { name: "f.txt" });
     expect(res.isError).toBe(true);
-    expect(drive.permissions.create).not.toHaveBeenCalled();
+    expect(drive.files.create).not.toHaveBeenCalled();
+  });
+});
+
+// Error paths: handlers surface (don't swallow) API rejections; the factory
+// wrapper maps them to isError results (covered once by "auth wrapper" below).
+describe("handlers surface API errors", () => {
+  const notFound = { response: { status: 404 }, message: "not found" };
+
+  it("driveListFiles rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.list.mockRejectedValue(notFound);
+    await expect(
+      driveListFiles(asDrive(drive), { page_size: 10, include_trashed: false, response_format: "markdown" }),
+    ).rejects.toBeDefined();
   });
 
-  it("creates a permission for a valid user share", async () => {
+  it("driveGetFile rejects", async () => {
     const drive = fakeDrive();
-    drive.permissions.create.mockResolvedValue({ data: { id: "p1", role: "writer" } });
-    const res = await driveShareFile(asDrive(drive), {
-      file_id: "1",
-      role: "writer",
-      type: "user",
-      email_address: "a@b.com",
-      send_notification: false,
-    });
-    expect(drive.permissions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        requestBody: expect.objectContaining({ role: "writer", emailAddress: "a@b.com" }),
-      }),
-    );
-    expect(res.structuredContent).toMatchObject({ permission: { id: "p1" } });
+    drive.files.get.mockRejectedValue(notFound);
+    await expect(
+      driveGetFile(asDrive(drive), { file_id: "x", response_format: "markdown" }),
+    ).rejects.toBeDefined();
+  });
+
+  it("driveDownloadFile rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.get.mockRejectedValue(notFound);
+    await expect(driveDownloadFile(asDrive(drive), { file_id: "x" })).rejects.toBeDefined();
+  });
+
+  it("driveCreateFolder rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.create.mockRejectedValue(notFound);
+    await expect(driveCreateFolder(asDrive(drive), { name: "f" })).rejects.toBeDefined();
+  });
+
+  it("driveUploadFile rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.create.mockRejectedValue(notFound);
+    await expect(
+      driveUploadFile(asDrive(drive), { name: "f", content: "x" }),
+    ).rejects.toBeDefined();
+  });
+
+  it("driveUpdateFile rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.update.mockRejectedValue(notFound);
+    await expect(driveUpdateFile(asDrive(drive), { file_id: "x", new_name: "y" })).rejects.toBeDefined();
+  });
+
+  it("driveCopyFile rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.copy.mockRejectedValue(notFound);
+    await expect(driveCopyFile(asDrive(drive), { file_id: "x" })).rejects.toBeDefined();
+  });
+
+  it("driveDeleteFile rejects", async () => {
+    const drive = fakeDrive();
+    drive.files.update.mockRejectedValue(notFound);
+    await expect(
+      driveDeleteFile(asDrive(drive), { file_id: "x", permanent: false }),
+    ).rejects.toBeDefined();
   });
 });
 

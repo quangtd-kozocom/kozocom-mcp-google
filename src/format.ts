@@ -77,6 +77,16 @@ function statusOf(error: unknown): number | undefined {
   return undefined;
 }
 
+/** Best-effort human-readable message from an Error or a gaxios-like object. */
+function messageOf(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const m = (error as { message?: unknown }).message;
+    if (typeof m === "string") return m;
+  }
+  return String(error);
+}
+
 /**
  * Map any thrown error into a clear, actionable message for the agent.
  * Recognizes auth failures, common HTTP statuses, and Zod validation errors.
@@ -91,7 +101,7 @@ export function handleGoogleError(error: unknown): string {
   }
 
   const status = statusOf(error);
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = messageOf(error);
   switch (status) {
     case 400:
       return `Error: Bad request — ${detail}. Check IDs, ranges (e.g. 'Sheet1!A1:C10'), and parameters.`;
@@ -100,7 +110,11 @@ export function handleGoogleError(error: unknown): string {
     case 403:
       return `Error: Permission denied — ${detail}. You may not have access to this file, or the required API/scope is not enabled.`;
     case 404:
-      return "Error: Not found. Check that the file/spreadsheet ID is correct and that you have access to it.";
+      return (
+        `Error: Not found — ${detail}. This means either the file/spreadsheet ID does not exist, ` +
+        `or it exists but you lack access (Google returns 404 instead of 403 to avoid revealing it). ` +
+        `Verify the ID and that your account can open it.`
+      );
     case 429:
       return "Error: Rate limit exceeded. Wait a moment and retry, or reduce the request frequency.";
     case 500:

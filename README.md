@@ -40,7 +40,6 @@ kozocom-mcp client codex        # print safe (read-only) MCP config
 | `drive_update_file` | rename, move, or replace content |
 | `drive_copy_file` | duplicate a file |
 | `drive_delete_file` | trash (default) or permanently delete |
-| `drive_share_file` | grant a permission (user / group / domain / anyone) |
 
 **Sheets**
 
@@ -49,7 +48,10 @@ kozocom-mcp client codex        # print safe (read-only) MCP config
 | `sheets_create_spreadsheet` | create a spreadsheet |
 | `sheets_get_spreadsheet` | list tabs and their dimensions |
 | `sheets_read_range` / `sheets_read_ranges` | read one / many A1 ranges |
-| `sheets_write_range` | overwrite values in a range |
+| `sheets_write_range` / `sheets_write_ranges` | overwrite values in one / many A1 ranges |
 | `sheets_append_rows` | append rows after the last row of a table |
 | `sheets_clear_range` | clear values in a range |
 | `sheets_add_sheet` / `sheets_delete_sheet` | add / remove a tab |
+| `sheets_format_cells` | format a cell range (colors, bold, font size, alignment) |
+| `sheets_set_data_validation` | set a dropdown (list) rule on a range |
+| `sheets_batch_update` | escape hatch: raw `spreadsheets.batchUpdate` requests (merge, borders, sort, …) |

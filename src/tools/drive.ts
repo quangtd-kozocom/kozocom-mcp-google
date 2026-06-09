@@ -374,64 +374,6 @@ Returns: { file_id, permanent, trashed? }`,
   run: driveDeleteFile,
 });
 
-const shareFileInput = {
-  file_id: z.string().min(1),
-  role: z
-    .enum(["reader", "commenter", "writer", "fileOrganizer", "organizer", "owner"])
-    .describe("Permission role"),
-  type: z.enum(["user", "group", "domain", "anyone"]).default("user"),
-  email_address: z.string().optional(),
-  domain: z.string().optional(),
-  send_notification: z.boolean().default(true),
-  message: z.string().optional(),
-};
-
-export async function driveShareFile(
-  drive: drive_v3.Drive,
-  args: ArgsOf<typeof shareFileInput>,
-): Promise<ToolResult> {
-  if ((args.type === "user" || args.type === "group") && !args.email_address) {
-    return errorResult("Error: email_address is required when type is 'user' or 'group'.");
-  }
-  if (args.type === "domain" && !args.domain) {
-    return errorResult("Error: domain is required when type is 'domain'.");
-  }
-  const permission = await new DriveFileAdapter(drive).shareFile({
-    fileId: args.file_id,
-    role: args.role,
-    type: args.type,
-    emailAddress: args.email_address,
-    domain: args.domain,
-    sendNotification: args.send_notification,
-    message: args.message,
-  });
-  const target = args.email_address ?? args.domain ?? args.type;
-  return toolResult(`Shared file ${args.file_id} as ${args.role} with ${target}.`, {
-    file_id: args.file_id,
-    permission,
-  });
-}
-
-const shareFileTool = driveTool({
-  name: "drive_share_file",
-  title: "Share Drive file",
-  description: `Grant a permission on a Drive file (share with a person, group, domain, or anyone).
-
-Args:
-  - file_id (string)
-  - role ('reader'|'commenter'|'writer'|'fileOrganizer'|'organizer'|'owner')
-  - type ('user'|'group'|'domain'|'anyone', default 'user')
-  - email_address (string): required for type user/group
-  - domain (string): required for type domain
-  - send_notification (boolean, default true)
-  - message (string, optional): notification email message
-
-Returns: { file_id, permission: {id, role, type, ...} }`,
-  inputSchema: shareFileInput,
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  run: driveShareFile,
-});
-
 // ── Registration ────────────────────────────────────────────────────────────
 
 export const driveTools: readonly ToolRegistration[] = [
@@ -443,7 +385,6 @@ export const driveTools: readonly ToolRegistration[] = [
   updateFileTool,
   copyFileTool,
   deleteFileTool,
-  shareFileTool,
 ];
 
 export function registerDriveTools(server: McpServer): void {
