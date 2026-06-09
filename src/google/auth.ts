@@ -6,6 +6,7 @@ import { Auth, google } from "googleapis";
 import {
   CLIENT_SECRET_PATH,
   CONFIG_DIR,
+  hasExplicitCredentialsPath,
   PROXY_SHARED_KEY,
   SCOPES,
   TOKEN_PATH,
@@ -53,7 +54,7 @@ const SUCCESS_HTML = (email?: string) =>
 
 /** Read and normalize the OAuth client config (embedded client or local JSON). */
 export async function readClientSecret(): Promise<ClientSecret> {
-  const explicitCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS !== undefined;
+  const explicitCredentialsPath = hasExplicitCredentialsPath();
   if (!explicitCredentialsPath && EMBEDDED_OAUTH_CLIENT) {
     return EMBEDDED_OAUTH_CLIENT;
   }

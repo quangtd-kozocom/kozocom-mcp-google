@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stderr as output } from "node:process";
-import { CLIENT_SECRET_PATH, CONFIG_DIR } from "../config/constants.js";
+import { CLIENT_SECRET_PATH, CONFIG_DIR, hasExplicitCredentialsPath } from "../config/constants.js";
 import { getAuthStatus } from "../google/auth.js";
 import { EMBEDDED_OAUTH_CLIENT } from "../google/generated/oauth-client.js";
 import { DANGEROUS_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from "../services/registry.js";
@@ -204,7 +204,7 @@ async function chooseClient(defaultClient: ClientName, yes: boolean): Promise<Cl
 
 export async function runSetup(options: SetupOptions = {}): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
-  const explicitCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS !== undefined;
+  const explicitCredentialsPath = hasExplicitCredentialsPath();
 
   console.error(`Config directory: ${CONFIG_DIR}`);
   console.error(`OAuth client config: ${CLIENT_SECRET_PATH}`);

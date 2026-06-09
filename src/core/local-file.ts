@@ -1,9 +1,9 @@
 import { realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { LOCAL_FILE_ROOT_ENV } from "../config/constants.js";
+import { ENV, getLocalFileRoot } from "../config/constants.js";
 
 const disabledMessage =
-  `Local file access is disabled. Set ${LOCAL_FILE_ROOT_ENV} to a directory, ` +
+  `Local file access is disabled. Set ${ENV.LOCAL_FILE_ROOT} to a directory, ` +
   "then keep local_path/save_path inside it.";
 
 export function isPathInsideRoot(path: string, root: string): boolean {
@@ -12,7 +12,7 @@ export function isPathInsideRoot(path: string, root: string): boolean {
 }
 
 async function localFileRoot(): Promise<string> {
-  const root = process.env[LOCAL_FILE_ROOT_ENV];
+  const root = getLocalFileRoot();
   if (!root) throw new Error(disabledMessage);
   return realpath(root);
 }
@@ -23,7 +23,7 @@ function candidatePath(root: string, path: string): string {
 
 function assertInside(path: string, root: string): void {
   if (!isPathInsideRoot(path, root)) {
-    throw new Error(`Local file path is outside ${LOCAL_FILE_ROOT_ENV}: ${path}`);
+    throw new Error(`Local file path is outside ${ENV.LOCAL_FILE_ROOT}: ${path}`);
   }
 }
 

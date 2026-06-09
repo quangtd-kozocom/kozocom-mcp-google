@@ -22,15 +22,48 @@ export const IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email"
  */
 export const SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE, ...IDENTITY_SCOPES];
 
+/**
+ * Every environment variable this server reads, by name. `constants.ts` is the
+ * single place that touches `process.env`; consumers import the resolved values
+ * (or the lazy getters) below — never the raw vars. One naming style: `ENV.*`.
+ */
+export const ENV = {
+  /** Directory holding the OAuth client config + cached token. */
+  CONFIG_DIR: "TERRA_MCP_DIR",
+  /** Path to a Google OAuth client JSON; overrides the embedded client. */
+  OAUTH_CREDENTIALS: "GOOGLE_OAUTH_CREDENTIALS",
+  /** Path to the cached OAuth token (access + refresh). */
+  OAUTH_TOKEN: "GOOGLE_OAUTH_TOKEN",
+  /** OAuth token-exchange proxy endpoint. */
+  TOKEN_PROXY_URL: "TERRA_MCP_TOKEN_PROXY_URL",
+  /** Shared deterrent key sent to the proxy in `x-proxy-key`. */
+  PROXY_KEY: "TERRA_MCP_PROXY_KEY",
+  /** "1" → run in safe mode: register only read-only tools. */
+  SAFE_MODE: "TERRA_MCP_SAFE_MODE",
+  /** The only directory `local_path`/`save_path` may read/write. */
+  LOCAL_FILE_ROOT: "TERRA_MCP_LOCAL_FILE_ROOT",
+} as const;
+
 /** Directory holding the optional OAuth client config and cached token. */
-export const CONFIG_DIR = process.env.TERRA_MCP_DIR ?? join(homedir(), ".terra-mcp");
+export const CONFIG_DIR = process.env[ENV.CONFIG_DIR] ?? join(homedir(), ".terra-mcp");
 
 /** Path to an optional downloaded Google OAuth client JSON. */
 export const CLIENT_SECRET_PATH =
-  process.env.GOOGLE_OAUTH_CREDENTIALS ?? join(CONFIG_DIR, "client_secret.json");
+  process.env[ENV.OAUTH_CREDENTIALS] ?? join(CONFIG_DIR, "client_secret.json");
 
 /** Path to the cached OAuth token (access + refresh). */
-export const TOKEN_PATH = process.env.GOOGLE_OAUTH_TOKEN ?? join(CONFIG_DIR, "token.json");
+export const TOKEN_PATH = process.env[ENV.OAUTH_TOKEN] ?? join(CONFIG_DIR, "token.json");
+
+/**
+ * Whether `GOOGLE_OAUTH_CREDENTIALS` was set explicitly (vs. falling back to the
+ * default path). Read lazily — tests stub the env at runtime, and "explicit?" is
+ * a runtime question, so this is evaluated per call, not frozen at import.
+ */
+export const hasExplicitCredentialsPath = (): boolean =>
+  process.env[ENV.OAUTH_CREDENTIALS] !== undefined;
+
+/** The configured local-file sandbox root, or undefined when disabled. Lazy. */
+export const getLocalFileRoot = (): string | undefined => process.env[ENV.LOCAL_FILE_ROOT];
 
 /**
  * OAuth token-exchange proxy. Google "Desktop" clients are confidential — the
@@ -40,7 +73,7 @@ export const TOKEN_PATH = process.env.GOOGLE_OAUTH_TOKEN ?? join(CONFIG_DIR, "to
  * secret and completes the exchange. See the `quang-mcp-auth-proxy` repo.
  */
 export const TOKEN_PROXY_URL =
-  process.env.TERRA_MCP_TOKEN_PROXY_URL ??
+  process.env[ENV.TOKEN_PROXY_URL] ??
   "https://quang-mcp-auth-proxy.getting-started-worker.workers.dev/token";
 
 /**
@@ -49,21 +82,15 @@ export const TOKEN_PROXY_URL =
  * protection is PKCE (binds each auth code to the CLI that started the flow).
  */
 export const PROXY_SHARED_KEY =
-  process.env.TERRA_MCP_PROXY_KEY ??
+  process.env[ENV.PROXY_KEY] ??
   "f80350f60e2c7950b72f3041c673d1194d45efa38217237ecc7bf87530f093d5";
 
 /** Maximum characters returned in a single tool response before truncation. */
 export const CHARACTER_LIMIT = 25000;
 
 /**
- * Env var that, when set to "1", runs the server in safe mode: irreversible,
- * destructive tools (delete/clear) are not registered. The `config` CLI command
- * emits this in the generated MCP config so AI clients can't destroy data.
+ * Whether this process runs in safe mode (dangerous tools not registered). The
+ * `config` CLI command emits `TERRA_MCP_SAFE_MODE` in the generated MCP config so
+ * AI clients can't destroy data.
  */
-const SAFE_MODE_ENV = "TERRA_MCP_SAFE_MODE";
-
-/** Whether this process is running with dangerous tools disabled. */
-export const SAFE_MODE = process.env[SAFE_MODE_ENV] === "1";
-
-/** Env var naming the only directory local_path/save_path may read/write. */
-export const LOCAL_FILE_ROOT_ENV = "TERRA_MCP_LOCAL_FILE_ROOT";
+export const SAFE_MODE = process.env[ENV.SAFE_MODE] === "1";

@@ -20,6 +20,24 @@ terra-mcp client codex        # print safe (read-only) MCP config
 | `client [codex\|claude\|copilot\|kiro\|all]` | print MCP config with **mutating tools disabled** (`--include-dangerous` keeps them) |
 | *(no command)* | start the stdio server |
 
+## Configuration
+
+Set these in your MCP client's `env` block (or the launching shell):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TERRA_MCP_DIR` | `~/.terra-mcp` | Directory holding the OAuth client config + cached token |
+| `GOOGLE_OAUTH_CREDENTIALS` | `<TERRA_MCP_DIR>/client_secret.json` | Google OAuth client JSON; overrides the embedded client |
+| `GOOGLE_OAUTH_TOKEN` | `<TERRA_MCP_DIR>/token.json` | Cached access/refresh token |
+| `TERRA_MCP_SAFE_MODE` | unset | `1` → register **only read-only tools**; drop every mutating tool |
+| `TERRA_MCP_LOCAL_FILE_ROOT` | unset | Only directory `local_path`/`save_path` may touch. Unset = local file up/download disabled |
+| `TERRA_MCP_TOKEN_PROXY_URL` | bundled proxy | OAuth token-exchange proxy (advanced; only when self-hosting it) |
+| `TERRA_MCP_PROXY_KEY` | bundled key | Deterrent key sent to the proxy (ships in the package — not a secret) |
+
+**Restricting tools.** Disable the mutating tools server-side with `TERRA_MCP_SAFE_MODE=1`, or
+per-client with `terra-mcp client <agent>` (pass `--include-dangerous` to keep them on). Tools are
+also gated by the **OAuth scopes granted at login** — a Sheets-only grant exposes no `drive_*` tools.
+
 ## Tools
 
 **Auth** — sign-in/out are CLI-only (`terra-mcp auth login`/`logout`).
