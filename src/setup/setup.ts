@@ -178,24 +178,23 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
 
   console.error(`Config directory: ${CONFIG_DIR}`);
-  console.error(`OAuth client secret: ${CLIENT_SECRET_PATH}`);
+  console.error(`OAuth client config: ${CLIENT_SECRET_PATH}`);
 
   if (!(await exists(CLIENT_SECRET_PATH))) {
     if (EMBEDDED_OAUTH_CLIENT) {
-      console.error("OAuth client secret: using embedded internal Desktop OAuth client.");
+      console.error("OAuth client config: using embedded public OAuth client.");
     } else {
       console.error(
-        "\nNo OAuth client secret was found. Install a package built with the embedded internal OAuth client, or save a Google OAuth Desktop app client here:",
+        "\nNo OAuth client config was found. Install a package built with the embedded public OAuth client, or save a Google OAuth client JSON here:",
       );
       console.error(`  ${CLIENT_SECRET_PATH}`);
-      console.error("\nSee SETUP.md for details.");
     }
   } else if (!(await isFile(CLIENT_SECRET_PATH))) {
-    throw new Error(`OAuth client secret path exists but is not a file: ${CLIENT_SECRET_PATH}`);
+    throw new Error(`OAuth client config path exists but is not a file: ${CLIENT_SECRET_PATH}`);
   } else {
     const secret = await readFile(CLIENT_SECRET_PATH, "utf8");
     JSON.parse(secret);
-    console.error("OAuth client secret found.");
+    console.error("OAuth client config found.");
   }
 
   const status = await getAuthStatus();

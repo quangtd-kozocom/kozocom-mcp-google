@@ -22,10 +22,10 @@ export const IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email"
  */
 export const SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE, ...IDENTITY_SCOPES];
 
-/** Directory holding the OAuth client secret and cached token. */
+/** Directory holding the optional OAuth client config and cached token. */
 export const CONFIG_DIR = process.env.KOZOCOM_MCP_DIR ?? join(homedir(), ".kozocom-mcp");
 
-/** Path to the downloaded Google OAuth client secret (Desktop app type). */
+/** Path to an optional downloaded Google OAuth client JSON. */
 export const CLIENT_SECRET_PATH =
   process.env.GOOGLE_OAUTH_CREDENTIALS ?? join(CONFIG_DIR, "client_secret.json");
 

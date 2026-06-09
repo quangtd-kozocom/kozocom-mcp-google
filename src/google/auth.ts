@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import open from "open";
-import { google } from "googleapis";
+import { Auth, google } from "googleapis";
 import { CLIENT_SECRET_PATH, CONFIG_DIR, SCOPES, TOKEN_PATH } from "../config/constants.js";
 import { NotAuthenticatedError } from "../core/result.js";
 import { EMBEDDED_OAUTH_CLIENT } from "./generated/oauth-client.js";
@@ -12,7 +12,7 @@ type Credentials = Parameters<OAuth2Client["setCredentials"]>[0];
 
 interface ClientSecret {
   client_id: string;
-  client_secret: string;
+  client_secret?: string;
 }
 
 export interface AuthStatus {
@@ -42,9 +42,9 @@ const SUCCESS_HTML = (email?: string) =>
    <p>You can close this tab and return to your terminal / MCP client.</p>
    </body></html>`;
 
-// ── Token & secret persistence ────────────────────────────────────────────────
+// ── Token & OAuth client persistence ─────────────────────────────────────────
 
-/** Read and normalize the OAuth client secret (Desktop "installed" or "web" type). */
+/** Read and normalize the OAuth client config (embedded public client or local JSON). */
 export async function readClientSecret(): Promise<ClientSecret> {
   let raw: string;
   try {
@@ -54,17 +54,17 @@ export async function readClientSecret(): Promise<ClientSecret> {
       return EMBEDDED_OAUTH_CLIENT;
     }
     throw new NotAuthenticatedError(
-      `No OAuth client secret found at ${CLIENT_SECRET_PATH}. ` +
-        `Use a package built with the embedded internal OAuth client, place one there, ` +
+      `No OAuth client config found at ${CLIENT_SECRET_PATH}. ` +
+        `Use a package built with the embedded public OAuth client, place one there, ` +
         `or set GOOGLE_OAUTH_CREDENTIALS to its path.`,
     );
   }
   const parsed = JSON.parse(raw) as Record<string, { client_id?: string; client_secret?: string }>;
   const node = parsed.installed ?? parsed.web;
-  if (!node?.client_id || !node?.client_secret) {
+  if (!node?.client_id) {
     throw new NotAuthenticatedError(
-      `Client secret at ${CLIENT_SECRET_PATH} is missing client_id/client_secret. ` +
-        `Download a fresh "Desktop app" OAuth client from Google Cloud Console.`,
+      `OAuth client config at ${CLIENT_SECRET_PATH} is missing client_id. ` +
+        `Download a fresh OAuth client from Google Cloud Console.`,
     );
   }
   return { client_id: node.client_id, client_secret: node.client_secret };
@@ -98,7 +98,14 @@ export async function clearToken(): Promise<boolean> {
 // ── Authorized clients & status ───────────────────────────────────────────────
 
 function createBaseClient(secret: ClientSecret, redirectUri?: string): OAuth2Client {
-  return new google.auth.OAuth2(secret.client_id, secret.client_secret, redirectUri);
+  if (secret.client_secret) {
+    return new google.auth.OAuth2(secret.client_id, secret.client_secret, redirectUri);
+  }
+  return new google.auth.OAuth2({
+    clientId: secret.client_id,
+    redirectUri,
+    clientAuthentication: Auth.ClientAuthentication.None,
+  });
 }
 
 /** Fetch the signed-in user's email, best-effort. */
@@ -140,7 +147,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   try {
     email = await fetchEmail(await getAuthenticatedClient());
   } catch {
-    // token present but unreadable secret; still report as cached
+    // token present but OAuth client config unreadable; still report as cached
   }
   return {
     authenticated: true,
@@ -163,6 +170,7 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
   return await new Promise<LoginResult>((resolve, reject) => {
     let client: OAuth2Client | undefined;
     let redirectUri = "";
+    let codeVerifier = "";
 
     const server = createServer((req, res) => {
       void (async () => {
@@ -176,7 +184,7 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
         try {
           if (authError) throw new Error(`Authorization denied: ${authError}`);
           if (!code || !client) throw new Error("Missing authorization code in callback.");
-          const { tokens } = await client.getToken({ code, redirect_uri: redirectUri });
+          const { tokens } = await client.getToken({ code, codeVerifier, redirect_uri: redirectUri });
           client.setCredentials(tokens);
           await saveToken(tokens);
           const email = await fetchEmail(client);
@@ -209,22 +217,32 @@ export async function runLoginFlow(options: LoginOptions = {}): Promise<LoginRes
     server.listen(0, "127.0.0.1", () => {
       const port = (server.address() as AddressInfo).port;
       redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
-      client = createBaseClient(secret, redirectUri);
-      const authUrl = client.generateAuthUrl({
-        access_type: "offline",
-        prompt: "consent",
-        scope: SCOPES,
-        // Force per-scope checkboxes so the user can grant Drive and Sheets
-        // independently. Desktop/pre-2019 clients don't get them by default;
-        // a no-op once Google has auto-enabled granular consent for the client.
-        enable_granular_consent: true,
-      });
-      onUrl?.(authUrl);
-      if (openBrowser) {
-        void open(authUrl).catch(() => {
-          /* user can open the URL manually via onUrl */
+      const oauthClient = createBaseClient(secret, redirectUri);
+      client = oauthClient;
+      void oauthClient.generateCodeVerifierAsync().then(({ codeVerifier: verifier, codeChallenge }) => {
+        if (!codeChallenge) throw new Error("Failed to generate OAuth PKCE challenge.");
+        codeVerifier = verifier;
+        const authUrl = oauthClient.generateAuthUrl({
+          access_type: "offline",
+          prompt: "consent",
+          scope: SCOPES,
+          code_challenge: codeChallenge,
+          code_challenge_method: Auth.CodeChallengeMethod.S256,
+          // Force per-scope checkboxes so the user can grant Drive and Sheets
+          // independently. Desktop/pre-2019 clients don't get them by default;
+          // a no-op once Google has auto-enabled granular consent for the client.
+          enable_granular_consent: true,
         });
-      }
+        onUrl?.(authUrl);
+        if (openBrowser) {
+          void open(authUrl).catch(() => {
+            /* user can open the URL manually via onUrl */
+          });
+        }
+      }).catch((err: unknown) => {
+        finish();
+        reject(err);
+      });
     });
   });
 }

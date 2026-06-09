@@ -1,7 +1,7 @@
 # kozocom-mcp — Google Drive + Sheets MCP server
 
-Read/write access to your **Google Drive** and **Sheets**. OAuth login — consent once, token cached
-and auto-refreshed.
+Read/write access to your **Google Drive** and **Sheets**. OAuth + PKCE login — only the public
+client ID ships in npm, consent happens in browser, token is cached and auto-refreshed.
 
 ## Quick start
 
