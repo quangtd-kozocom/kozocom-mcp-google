@@ -109,7 +109,7 @@ function copilotSnippet(command: string, args: string[], credentialsPath: string
 export function mcpConfigSnippet({
   client,
   command = "npx",
-  args = ["-y", PACKAGE_NAME],
+  args = ["-y", "-p", PACKAGE_NAME, "kozocom-mcp"],
   credentialsPath = null,
   safeMode = false,
 }: McpSnippetOptions): string {

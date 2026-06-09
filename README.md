@@ -108,7 +108,7 @@ If running from source, build first (`pnpm build`), then sign in (`pnpm login`) 
 ```json
 {
   "command": "npx",
-  "args": ["-y", "@quangtd-kozocom/kozocom-mcp-google"]
+  "args": ["-y", "-p", "@quangtd-kozocom/kozocom-mcp-google", "kozocom-mcp"]
 }
 ```
 
@@ -124,7 +124,7 @@ kozocom-mcp
 
 ```bash
 claude mcp add kozocom-google \
-  -- npx -y @quangtd-kozocom/kozocom-mcp-google
+  -- npx -y -p @quangtd-kozocom/kozocom-mcp-google kozocom-mcp
 ```
 
 Or add to `.mcp.json` / your Claude config:
@@ -134,7 +134,7 @@ Or add to `.mcp.json` / your Claude config:
   "mcpServers": {
     "kozocom-google": {
       "command": "npx",
-      "args": ["-y", "@quangtd-kozocom/kozocom-mcp-google"]
+      "args": ["-y", "-p", "@quangtd-kozocom/kozocom-mcp-google", "kozocom-mcp"]
     }
   }
 }
@@ -147,7 +147,7 @@ In `~/.codex/config.toml`:
 ```toml
 [mcp_servers.kozocom-google]
 command = "npx"
-args = ["-y", "@quangtd-kozocom/kozocom-mcp-google"]
+args = ["-y", "-p", "@quangtd-kozocom/kozocom-mcp-google", "kozocom-mcp"]
 ```
 
 ### GitHub Copilot (VS Code)
@@ -160,7 +160,7 @@ In `.vscode/mcp.json` (or the global `mcp.json`):
     "kozocom-google": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@quangtd-kozocom/kozocom-mcp-google"]
+      "args": ["-y", "-p", "@quangtd-kozocom/kozocom-mcp-google", "kozocom-mcp"]
     }
   }
 }
