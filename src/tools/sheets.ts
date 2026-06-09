@@ -45,6 +45,37 @@ function valuesToMarkdown(values: CellValue[][]): string {
   return lines.join("\n");
 }
 
+// A GridRange targets cells by numeric sheetId + 0-based, end-exclusive indices
+// (how batchUpdate addresses cells, unlike the A1 ranges used for values I/O).
+const gridRangeInput = {
+  spreadsheet_id: z.string().min(1),
+  sheet_id: z.number().int().describe("Numeric sheetId from sheets_get_spreadsheet"),
+  start_row: z.number().int().min(0).describe("0-based, inclusive"),
+  end_row: z.number().int().min(0).describe("0-based, exclusive"),
+  start_column: z.number().int().min(0).describe("0-based, inclusive"),
+  end_column: z.number().int().min(0).describe("0-based, exclusive"),
+};
+
+function toGridRange(args: ArgsOf<typeof gridRangeInput>): sheets_v4.Schema$GridRange {
+  return {
+    sheetId: args.sheet_id,
+    startRowIndex: args.start_row,
+    endRowIndex: args.end_row,
+    startColumnIndex: args.start_column,
+    endColumnIndex: args.end_column,
+  };
+}
+
+/** "#RRGGBB" → a Sheets Color (0–1 channels). */
+function hexToColor(hex: string): sheets_v4.Schema$Color {
+  const h = hex.replace(/^#/, "");
+  return {
+    red: parseInt(h.slice(0, 2), 16) / 255,
+    green: parseInt(h.slice(2, 4), 16) / 255,
+    blue: parseInt(h.slice(4, 6), 16) / 255,
+  };
+}
+
 // ── Tools ─────────────────────────────────────────────────────────────────────
 // Each tool: input schema → exported pure handler (unit-tested directly) →
 // registration. Google API calls live in SheetsAdapter; handlers only translate
@@ -401,6 +432,127 @@ Returns: { sheet_id }`,
   run: sheetsDeleteSheet,
 });
 
+const hexColor = z
+  .string()
+  .regex(/^#?[0-9a-fA-F]{6}$/, "expected hex color like #4285F4");
+
+const formatCellsInput = {
+  ...gridRangeInput,
+  background_color: hexColor.optional(),
+  text_color: hexColor.optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  font_size: z.number().int().min(1).optional(),
+  horizontal_alignment: z.enum(["LEFT", "CENTER", "RIGHT"]).optional(),
+};
+
+export async function sheetsFormatCells(
+  sheets: sheets_v4.Sheets,
+  args: ArgsOf<typeof formatCellsInput>,
+): Promise<ToolResult> {
+  const format: sheets_v4.Schema$CellFormat = {};
+  const text: sheets_v4.Schema$TextFormat = {};
+  const fields: string[] = [];
+  if (args.background_color !== undefined) {
+    format.backgroundColor = hexToColor(args.background_color);
+    fields.push("userEnteredFormat.backgroundColor");
+  }
+  if (args.horizontal_alignment !== undefined) {
+    format.horizontalAlignment = args.horizontal_alignment;
+    fields.push("userEnteredFormat.horizontalAlignment");
+  }
+  if (args.bold !== undefined) {
+    text.bold = args.bold;
+    fields.push("userEnteredFormat.textFormat.bold");
+  }
+  if (args.italic !== undefined) {
+    text.italic = args.italic;
+    fields.push("userEnteredFormat.textFormat.italic");
+  }
+  if (args.font_size !== undefined) {
+    text.fontSize = args.font_size;
+    fields.push("userEnteredFormat.textFormat.fontSize");
+  }
+  if (args.text_color !== undefined) {
+    text.foregroundColor = hexToColor(args.text_color);
+    fields.push("userEnteredFormat.textFormat.foregroundColor");
+  }
+  if (!fields.length) return toolResult("No formatting options given; nothing to change.", { applied: false });
+  if (Object.keys(text).length) format.textFormat = text;
+
+  await new SheetsAdapter(sheets).repeatCellFormat({
+    spreadsheetId: args.spreadsheet_id,
+    range: toGridRange(args),
+    format,
+    fields: fields.join(","),
+  });
+  return toolResult(`Formatted cells on sheet ${args.sheet_id}.`, { applied: true, fields });
+}
+
+const formatCellsTool = sheetsTool({
+  name: "sheets_format_cells",
+  title: "Format a cell range",
+  description: `Apply cell formatting to a grid range (repeatCell). Only the options you pass are changed.
+
+Args:
+  - spreadsheet_id (string)
+  - sheet_id (number): numeric sheetId from sheets_get_spreadsheet
+  - start_row, end_row, start_column, end_column (number): 0-based; start inclusive, end exclusive
+  - background_color, text_color (hex, optional): e.g. '#4285F4'
+  - bold, italic (boolean, optional)
+  - font_size (number, optional)
+  - horizontal_alignment ('LEFT'|'CENTER'|'RIGHT', optional)
+
+Returns: { applied, fields }`,
+  inputSchema: formatCellsInput,
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  run: sheetsFormatCells,
+});
+
+const setDataValidationInput = {
+  ...gridRangeInput,
+  values: z.array(z.string()).min(1).describe("Dropdown options"),
+  strict: z.boolean().default(true).describe("Reject values not in the list"),
+  show_dropdown: z.boolean().default(true).describe("Show the dropdown UI arrow"),
+};
+
+export async function sheetsSetDataValidation(
+  sheets: sheets_v4.Sheets,
+  args: ArgsOf<typeof setDataValidationInput>,
+): Promise<ToolResult> {
+  await new SheetsAdapter(sheets).setDataValidation({
+    spreadsheetId: args.spreadsheet_id,
+    range: toGridRange(args),
+    rule: {
+      condition: { type: "ONE_OF_LIST", values: args.values.map((v) => ({ userEnteredValue: v })) },
+      strict: args.strict,
+      showCustomUi: args.show_dropdown,
+    },
+  });
+  return toolResult(`Set a ${args.values.length}-option dropdown on sheet ${args.sheet_id}.`, {
+    values: args.values,
+  });
+}
+
+const setDataValidationTool = sheetsTool({
+  name: "sheets_set_data_validation",
+  title: "Set a dropdown on a range",
+  description: `Add a dropdown (list) data-validation rule to a grid range (setDataValidation).
+
+Args:
+  - spreadsheet_id (string)
+  - sheet_id (number): numeric sheetId from sheets_get_spreadsheet
+  - start_row, end_row, start_column, end_column (number): 0-based; start inclusive, end exclusive
+  - values (string[]): dropdown options
+  - strict (boolean, default true): reject entries not in the list
+  - show_dropdown (boolean, default true): show the dropdown arrow in the UI
+
+Returns: { values }`,
+  inputSchema: setDataValidationInput,
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  run: sheetsSetDataValidation,
+});
+
 // ── Registration ────────────────────────────────────────────────────────────
 
 export const sheetsTools: readonly ToolRegistration[] = [
@@ -413,6 +565,8 @@ export const sheetsTools: readonly ToolRegistration[] = [
   clearRangeTool,
   addSheetTool,
   deleteSheetTool,
+  formatCellsTool,
+  setDataValidationTool,
 ];
 
 export function registerSheetsTools(server: McpServer): void {

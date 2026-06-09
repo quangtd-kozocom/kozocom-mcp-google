@@ -107,6 +107,8 @@ describe("danger classification", () => {
         "sheets_clear_range",
         "sheets_add_sheet",
         "sheets_delete_sheet",
+        "sheets_format_cells",
+        "sheets_set_data_validation",
       ]),
     );
   });

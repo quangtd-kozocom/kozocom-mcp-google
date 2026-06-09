@@ -7,8 +7,10 @@ import {
   sheetsAddSheet,
   sheetsCreateSpreadsheet,
   sheetsDeleteSheet,
+  sheetsFormatCells,
   sheetsGetSpreadsheet,
   sheetsReadRange,
+  sheetsSetDataValidation,
   sheetsWriteRange,
 } from "./sheets.js";
 
@@ -143,5 +145,61 @@ describe("sheetsAddSheet / sheetsDeleteSheet", () => {
         requestBody: { requests: [{ deleteSheet: { sheetId: 42 } }] },
       }),
     );
+  });
+});
+
+const grid = { sheet_id: 0, start_row: 0, end_row: 2, start_column: 0, end_column: 3 };
+
+describe("sheetsFormatCells", () => {
+  it("builds a repeatCell request with only the given fields", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockResolvedValue({ data: {} });
+    const res = await sheetsFormatCells(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      ...grid,
+      background_color: "#ffffff",
+      bold: true,
+    });
+    const req = sheets.spreadsheets.batchUpdate.mock.calls[0][0].requestBody.requests[0].repeatCell;
+    expect(req.range).toEqual({
+      sheetId: 0,
+      startRowIndex: 0,
+      endRowIndex: 2,
+      startColumnIndex: 0,
+      endColumnIndex: 3,
+    });
+    expect(req.cell.userEnteredFormat).toMatchObject({
+      backgroundColor: { red: 1, green: 1, blue: 1 },
+      textFormat: { bold: true },
+    });
+    expect(req.fields).toBe("userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold");
+    expect(res.structuredContent).toMatchObject({ applied: true });
+  });
+
+  it("does nothing when no format options are passed", async () => {
+    const sheets = fakeSheets();
+    const res = await sheetsFormatCells(asSheets(sheets), { spreadsheet_id: "s1", ...grid });
+    expect(sheets.spreadsheets.batchUpdate).not.toHaveBeenCalled();
+    expect(res.structuredContent).toMatchObject({ applied: false });
+  });
+});
+
+describe("sheetsSetDataValidation", () => {
+  it("builds a ONE_OF_LIST dropdown rule", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.batchUpdate.mockResolvedValue({ data: {} });
+    await sheetsSetDataValidation(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      ...grid,
+      values: ["Yes", "No"],
+      strict: true,
+      show_dropdown: true,
+    });
+    const req = sheets.spreadsheets.batchUpdate.mock.calls[0][0].requestBody.requests[0].setDataValidation;
+    expect(req.rule).toMatchObject({
+      condition: { type: "ONE_OF_LIST", values: [{ userEnteredValue: "Yes" }, { userEnteredValue: "No" }] },
+      strict: true,
+      showCustomUi: true,
+    });
   });
 });

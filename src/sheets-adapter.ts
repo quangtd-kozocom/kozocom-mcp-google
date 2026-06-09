@@ -195,4 +195,31 @@ export class SheetsAdapter {
       requestBody: { requests: [{ deleteSheet: { sheetId: args.sheetId } }] },
     });
   }
+
+  async repeatCellFormat(args: {
+    spreadsheetId: string;
+    range: sheets_v4.Schema$GridRange;
+    format: sheets_v4.Schema$CellFormat;
+    fields: string;
+  }): Promise<void> {
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: args.spreadsheetId,
+      requestBody: {
+        requests: [
+          { repeatCell: { range: args.range, cell: { userEnteredFormat: args.format }, fields: args.fields } },
+        ],
+      },
+    });
+  }
+
+  async setDataValidation(args: {
+    spreadsheetId: string;
+    range: sheets_v4.Schema$GridRange;
+    rule: sheets_v4.Schema$DataValidationRule;
+  }): Promise<void> {
+    await this.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: args.spreadsheetId,
+      requestBody: { requests: [{ setDataValidation: { range: args.range, rule: args.rule } }] },
+    });
+  }
 }
