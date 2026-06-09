@@ -33,6 +33,7 @@
     "auth:status:dev": "tsx src/cli.ts auth status",
     "setup:dev": "tsx src/cli.ts setup",
     "client:dev": "tsx src/cli.ts client",
+    "release": "bash scripts/release.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint",
