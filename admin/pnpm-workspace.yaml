@@ -1,4 +1,10 @@
 # Standalone project: this file stops pnpm from walking up into the root
 # terra-mcp workspace, so `admin` installs and builds entirely on its own.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+trustLockfile: true
+trustPolicyExclude:
+  - semver@6.3.1
 allowBuilds:
   esbuild: true
+  msw: false

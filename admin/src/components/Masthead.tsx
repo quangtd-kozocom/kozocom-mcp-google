@@ -1,5 +1,5 @@
 import type { Health } from "../lib/types";
-import { VaultCrest } from "./icons";
+import { VaultCrest } from "./VaultCrest";
 
 export function Masthead({ health }: { health: Health | null }) {
   const signedIn = health?.signedIn ?? false;
