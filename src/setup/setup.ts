@@ -204,25 +204,26 @@ async function chooseClient(defaultClient: ClientName, yes: boolean): Promise<Cl
 
 export async function runSetup(options: SetupOptions = {}): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
+  const explicitCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS !== undefined;
 
   console.error(`Config directory: ${CONFIG_DIR}`);
   console.error(`OAuth client config: ${CLIENT_SECRET_PATH}`);
 
-  if (!(await exists(CLIENT_SECRET_PATH))) {
-    if (EMBEDDED_OAUTH_CLIENT) {
-      console.error("OAuth client config: using embedded OAuth client.");
-    } else {
+  if (!explicitCredentialsPath && EMBEDDED_OAUTH_CLIENT) {
+    console.error("OAuth client config: using embedded OAuth client.");
+  } else {
+    if (!(await exists(CLIENT_SECRET_PATH))) {
       console.error(
         "\nNo OAuth client config was found. Install a package built with the embedded OAuth client, or save a Google OAuth client JSON here:",
       );
       console.error(`  ${CLIENT_SECRET_PATH}`);
+    } else if (!(await isFile(CLIENT_SECRET_PATH))) {
+      throw new Error(`OAuth client config path exists but is not a file: ${CLIENT_SECRET_PATH}`);
+    } else {
+      const secret = await readFile(CLIENT_SECRET_PATH, "utf8");
+      JSON.parse(secret);
+      console.error("OAuth client config found.");
     }
-  } else if (!(await isFile(CLIENT_SECRET_PATH))) {
-    throw new Error(`OAuth client config path exists but is not a file: ${CLIENT_SECRET_PATH}`);
-  } else {
-    const secret = await readFile(CLIENT_SECRET_PATH, "utf8");
-    JSON.parse(secret);
-    console.error("OAuth client config found.");
   }
 
   const status = await getAuthStatus();

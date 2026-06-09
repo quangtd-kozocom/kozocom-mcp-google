@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const embeddedOAuthMock = vi.hoisted(() => ({
+  value: null as { client_id: string; client_secret?: string } | null,
+}));
+
 const googleMock = vi.hoisted(() => {
   const constructorArgs: unknown[][] = [];
   const authUrlOptions: Record<string, unknown>[] = [];
@@ -78,6 +82,11 @@ vi.mock("googleapis", () => ({
 }));
 
 vi.mock("open", () => ({ default: vi.fn(() => Promise.resolve()) }));
+vi.mock("./generated/oauth-client.js", () => ({
+  get EMBEDDED_OAUTH_CLIENT() {
+    return embeddedOAuthMock.value;
+  },
+}));
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { clearToken, loadToken, readClientSecret, runLoginFlow, saveToken } from "./auth.js";
@@ -91,6 +100,8 @@ const mockRm = vi.mocked(rm);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
+  embeddedOAuthMock.value = null;
   googleMock.constructorArgs.length = 0;
   googleMock.authUrlOptions.length = 0;
   googleMock.tokenOptions.length = 0;
@@ -152,6 +163,29 @@ describe("readClientSecret", () => {
   it("accepts a public OAuth client with only client_id", async () => {
     mockReadFile.mockResolvedValue(JSON.stringify({ installed: { client_id: "cid" } }));
     expect(await readClientSecret()).toEqual({ client_id: "cid", client_secret: undefined });
+  });
+
+  it("prefers an embedded OAuth client over a stale default config file", async () => {
+    embeddedOAuthMock.value = { client_id: "embedded", client_secret: "embedded-secret" };
+    mockReadFile.mockResolvedValue(
+      JSON.stringify({ installed: { client_id: "local", client_secret: "local-secret" } }),
+    );
+
+    expect(await readClientSecret()).toEqual({
+      client_id: "embedded",
+      client_secret: "embedded-secret",
+    });
+    expect(mockReadFile).not.toHaveBeenCalled();
+  });
+
+  it("lets explicit GOOGLE_OAUTH_CREDENTIALS override the embedded OAuth client", async () => {
+    vi.stubEnv("GOOGLE_OAUTH_CREDENTIALS", "/tmp/client_secret.json");
+    embeddedOAuthMock.value = { client_id: "embedded", client_secret: "embedded-secret" };
+    mockReadFile.mockResolvedValue(
+      JSON.stringify({ installed: { client_id: "local", client_secret: "local-secret" } }),
+    );
+
+    expect(await readClientSecret()).toEqual({ client_id: "local", client_secret: "local-secret" });
   });
 
   it("throws NotAuthenticatedError when the file is missing", async () => {

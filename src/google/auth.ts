@@ -46,13 +46,15 @@ const SUCCESS_HTML = (email?: string) =>
 
 /** Read and normalize the OAuth client config (embedded client or local JSON). */
 export async function readClientSecret(): Promise<ClientSecret> {
+  const explicitCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS !== undefined;
+  if (!explicitCredentialsPath && EMBEDDED_OAUTH_CLIENT) {
+    return EMBEDDED_OAUTH_CLIENT;
+  }
+
   let raw: string;
   try {
     raw = await readFile(CLIENT_SECRET_PATH, "utf8");
   } catch {
-    if (EMBEDDED_OAUTH_CLIENT) {
-      return EMBEDDED_OAUTH_CLIENT;
-    }
     throw new NotAuthenticatedError(
       `No OAuth client config found at ${CLIENT_SECRET_PATH}. ` +
         `Use a package built with the embedded OAuth client, place one there, ` +
