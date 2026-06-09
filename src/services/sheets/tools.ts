@@ -282,9 +282,18 @@ const writeRangeTool = sheetsTool({
   title: "Write one or more cell ranges",
   description: `Overwrite cell values in one A1 range, or several at once (values.batchUpdate).
 
+Cells store literal data, not formatted text. Write one value per cell — do NOT dump a markdown
+table (or CSV/TSV) into a single cell or row. e.g. the markdown table
+"| Name | Age |\\n| --- | --- |\\n| Ann | 30 |" must become rows
+[["Name","Age"],["Ann",30]], and never include separator rows like ["---","---"]. For visual
+styling (bold headers, colors, alignment) use sheets_format_cells, not markdown syntax in cells.
+
 Args:
   - spreadsheet_id (string)
-  - range (string, optional): A1 range for a single-range write; the top-left anchor for the block
+  - range (string, optional): A1 range for a single-range write. Prefer a top-left ANCHOR only
+    (e.g. 'Sheet1!A1') — the block auto-sizes to 'values', so you can't mismatch. If you give a
+    bounded range (e.g. 'Sheet1!A1:N50'), 'values' must fit exactly within it: more rows/cols than
+    the range = Google 400 "tried writing to row [N]". When unsure, pass the anchor.
   - values (CellValue[][], optional): rows of cells (string|number|boolean|null) for 'range'
   - data (array, optional): for multi-range writes, [{ range: A1 string, values: CellValue[][] }, ...]
   - value_input_option ('USER_ENTERED'|'RAW', default USER_ENTERED): applied to every range
@@ -332,6 +341,9 @@ const appendRowsTool = sheetsTool({
   name: "sheets_append_rows",
   title: "Append rows",
   description: `Append rows after the existing table in a range (values.append).
+
+Cells store literal data — one value per cell. Don't pack a markdown/CSV table into a single cell;
+split into rows of cells and drop any "| --- |" separator rows.
 
 Args:
   - spreadsheet_id (string)
