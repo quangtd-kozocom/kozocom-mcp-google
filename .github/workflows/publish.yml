@@ -10,11 +10,19 @@ permissions:
   contents: read
   packages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          run_install: false
 
       - uses: actions/setup-node@v4
         with:
@@ -22,9 +30,6 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@quangtd-kozocom"
           cache: pnpm
-
-      - name: Enable pnpm
-        run: corepack enable
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
