@@ -5,6 +5,7 @@ import open from "open";
 import { google } from "googleapis";
 import { CLIENT_SECRET_PATH, CONFIG_DIR, SCOPES, TOKEN_PATH } from "./constants.js";
 import { NotAuthenticatedError } from "./format.js";
+import { EMBEDDED_OAUTH_CLIENT } from "./generated/oauth-client.js";
 
 export type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 type Credentials = Parameters<OAuth2Client["setCredentials"]>[0];
@@ -49,9 +50,12 @@ export async function readClientSecret(): Promise<ClientSecret> {
   try {
     raw = await readFile(CLIENT_SECRET_PATH, "utf8");
   } catch {
+    if (EMBEDDED_OAUTH_CLIENT) {
+      return EMBEDDED_OAUTH_CLIENT;
+    }
     throw new NotAuthenticatedError(
       `No OAuth client secret found at ${CLIENT_SECRET_PATH}. ` +
-        `Create one in Google Cloud Console (see SETUP.md) and place it there, ` +
+        `Use a package built with the embedded internal OAuth client, place one there, ` +
         `or set GOOGLE_OAUTH_CREDENTIALS to its path.`,
     );
   }

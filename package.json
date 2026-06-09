@@ -1,18 +1,26 @@
 {
-  "name": "kozocom-mcp-google",
+  "name": "@quangtd-kozocom/kozocom-mcp-google",
   "version": "0.1.0",
   "description": "Kozocom MCP server",
   "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/quangtd-kozocom/kozocom-mcp-google.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "bin": {
-    "kozocom-mcp": "./dist/cli.js",
-    "kozocom-mcp-server": "./dist/index.js"
+    "kozocom-mcp": "dist/cli.js",
+    "kozocom-mcp-server": "dist/index.js"
   },
   "files": [
     "dist",
     "scripts/install.sh"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/embed-oauth-client.mjs",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/cli.js",
     "login": "node dist/cli.js auth login",

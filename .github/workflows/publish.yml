@@ -1,0 +1,50 @@
+name: Publish Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: "@quangtd-kozocom"
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build with embedded OAuth client
+        run: pnpm build
+        env:
+          KOZOCOM_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.KOZOCOM_GOOGLE_OAUTH_CLIENT_ID }}
+          KOZOCOM_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.KOZOCOM_GOOGLE_OAUTH_CLIENT_SECRET }}
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
