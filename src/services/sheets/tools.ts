@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { sheets_v4 } from "googleapis";
 import { type CellValue, SheetsAdapter } from "./adapter.js";
 import {
+  errorResult,
   formatResponse,
   responseFormatSchema,
   type ToolResult,
@@ -161,7 +162,9 @@ Returns: { spreadsheet_id, title, url, sheets:[{sheetId,title,index,rows,columns
 
 const readRangeInput = {
   spreadsheet_id: z.string().min(1),
-  range: z.string().min(1).describe("A1 notation, e.g. 'Sheet1!A1:D20'"),
+  range: z
+    .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
+    .describe("A single A1 range (e.g. 'Sheet1!A1:D20'), or an array of A1 ranges to batch-read in one call"),
   value_render_option: valueRenderOption,
   response_format: responseFormatSchema,
 };
@@ -170,7 +173,26 @@ export async function sheetsReadRange(
   sheets: sheets_v4.Sheets,
   args: ArgsOf<typeof readRangeInput>,
 ): Promise<ToolResult> {
-  const { range, values } = await new SheetsAdapter(sheets).readRange({
+  const adapter = new SheetsAdapter(sheets);
+  // Array → values.batchGet (multi-range shape); single string → values.get (flat shape).
+  if (Array.isArray(args.range)) {
+    const ranges = await adapter.readRanges({
+      spreadsheetId: args.spreadsheet_id,
+      ranges: args.range,
+      valueRenderOption: args.value_render_option,
+    });
+    const output = {
+      count: ranges.length,
+      ranges: ranges.map((r) => ({ range: r.range, row_count: r.values.length, values: r.values })),
+    };
+    const text = formatResponse(
+      args.response_format,
+      output,
+      () => ranges.map((r) => `# ${r.range}\n\n${valuesToMarkdown(r.values)}`).join("\n\n") || "(no ranges)",
+    );
+    return toolResult(text, output);
+  }
+  const { range, values } = await adapter.readRange({
     spreadsheetId: args.spreadsheet_id,
     range: args.range,
     valueRenderOption: args.value_render_option,
@@ -182,67 +204,32 @@ export async function sheetsReadRange(
 
 const readRangeTool = sheetsTool({
   name: "sheets_read_range",
-  title: "Read a cell range",
-  description: `Read cell values from one A1 range.
+  title: "Read one or more cell ranges",
+  description: `Read cell values from one A1 range, or several at once (batchGet).
 
 Args:
   - spreadsheet_id (string)
-  - range (string): A1 notation, e.g. 'Sheet1!A1:D20' or 'Sheet1' for the whole tab
+  - range (string | string[]): a single A1 range (e.g. 'Sheet1!A1:D20' or 'Sheet1' for the whole tab),
+    or an array of A1 ranges to read together in one call
   - value_render_option ('FORMATTED_VALUE'|'UNFORMATTED_VALUE'|'FORMULA', default FORMATTED_VALUE)
   - response_format ('markdown'|'json', default markdown)
 
-Returns: { range, row_count, values: CellValue[][] }`,
+Returns: a single range → { range, row_count, values: CellValue[][] };
+an array of ranges → { count, ranges: [{ range, row_count, values }] }`,
   inputSchema: readRangeInput,
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   run: sheetsReadRange,
 });
 
-const readRangesInput = {
-  spreadsheet_id: z.string().min(1),
-  ranges: z.array(z.string().min(1)).min(1),
-  value_render_option: valueRenderOption,
-  response_format: responseFormatSchema,
-};
-
-export async function sheetsReadRanges(
-  sheets: sheets_v4.Sheets,
-  args: ArgsOf<typeof readRangesInput>,
-): Promise<ToolResult> {
-  const ranges = await new SheetsAdapter(sheets).readRanges({
-    spreadsheetId: args.spreadsheet_id,
-    ranges: args.ranges,
-    valueRenderOption: args.value_render_option,
-  });
-  const output = { ranges };
-  const text = formatResponse(
-    args.response_format,
-    output,
-    () => ranges.map((r) => `# ${r.range}\n\n${valuesToMarkdown(r.values)}`).join("\n\n") || "(no ranges)",
-  );
-  return toolResult(text, output);
-}
-
-const readRangesTool = sheetsTool({
-  name: "sheets_read_ranges",
-  title: "Read multiple ranges",
-  description: `Read several A1 ranges in one call (batchGet).
-
-Args:
-  - spreadsheet_id (string)
-  - ranges (string[]): A1 ranges
-  - value_render_option ('FORMATTED_VALUE'|'UNFORMATTED_VALUE'|'FORMULA', default FORMATTED_VALUE)
-  - response_format ('markdown'|'json', default markdown)
-
-Returns: { ranges: [{ range, values: CellValue[][] }] }`,
-  inputSchema: readRangesInput,
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  run: sheetsReadRanges,
-});
-
 const writeRangeInput = {
   spreadsheet_id: z.string().min(1),
-  range: z.string().min(1),
-  values: valuesSchema,
+  range: z.string().min(1).optional().describe("A1 range for a single-range write; the top-left anchor"),
+  values: valuesSchema.optional().describe("Rows of cells to write when using 'range'"),
+  data: z
+    .array(z.object({ range: z.string().min(1), values: valuesSchema }))
+    .min(1)
+    .optional()
+    .describe("For multi-range writes: list of {range, values} pairs; provide instead of range/values"),
   value_input_option: valueInputOption,
 };
 
@@ -250,7 +237,33 @@ export async function sheetsWriteRange(
   sheets: sheets_v4.Sheets,
   args: ArgsOf<typeof writeRangeInput>,
 ): Promise<ToolResult> {
-  const result = await new SheetsAdapter(sheets).writeRange({
+  const adapter = new SheetsAdapter(sheets);
+  // 'data' → values.batchUpdate (multi-range shape); 'range'+'values' → values.update (flat shape).
+  if (args.data) {
+    const result = await adapter.batchWriteRanges({
+      spreadsheetId: args.spreadsheet_id,
+      data: args.data,
+      valueInputOption: args.value_input_option,
+    });
+    return toolResult(
+      `Updated ${result.totalUpdatedCells ?? 0} cells across ${result.responses.length} range(s).`,
+      {
+        total_updated_rows: result.totalUpdatedRows,
+        total_updated_columns: result.totalUpdatedColumns,
+        total_updated_cells: result.totalUpdatedCells,
+        ranges: result.responses.map((r) => ({
+          updated_range: r.updatedRange,
+          updated_rows: r.updatedRows,
+          updated_columns: r.updatedColumns,
+          updated_cells: r.updatedCells,
+        })),
+      },
+    );
+  }
+  if (!args.range || args.values === undefined) {
+    return errorResult("Error: provide either 'range' + 'values' (single write) or 'data' (multi-range write).");
+  }
+  const result = await adapter.writeRange({
     spreadsheetId: args.spreadsheet_id,
     range: args.range,
     values: args.values,
@@ -266,70 +279,23 @@ export async function sheetsWriteRange(
 
 const writeRangeTool = sheetsTool({
   name: "sheets_write_range",
-  title: "Write a cell range",
-  description: `Overwrite cell values in an A1 range (values.update).
+  title: "Write one or more cell ranges",
+  description: `Overwrite cell values in one A1 range, or several at once (values.batchUpdate).
 
 Args:
   - spreadsheet_id (string)
-  - range (string): A1 notation; the top-left anchor for the written block
-  - values (CellValue[][]): rows of cells (string|number|boolean|null)
-  - value_input_option ('USER_ENTERED'|'RAW', default USER_ENTERED)
+  - range (string, optional): A1 range for a single-range write; the top-left anchor for the block
+  - values (CellValue[][], optional): rows of cells (string|number|boolean|null) for 'range'
+  - data (array, optional): for multi-range writes, [{ range: A1 string, values: CellValue[][] }, ...]
+  - value_input_option ('USER_ENTERED'|'RAW', default USER_ENTERED): applied to every range
 
-Returns: { updated_range, updated_rows, updated_columns, updated_cells }`,
+Provide either range+values (single) OR data (multiple).
+Returns: single write → { updated_range, updated_rows, updated_columns, updated_cells };
+multi-range write → { total_updated_rows, total_updated_columns, total_updated_cells,
+  ranges:[{updated_range, updated_rows, updated_columns, updated_cells}] }`,
   inputSchema: writeRangeInput,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   run: sheetsWriteRange,
-});
-
-const writeRangesInput = {
-  spreadsheet_id: z.string().min(1),
-  data: z
-    .array(z.object({ range: z.string().min(1), values: valuesSchema }))
-    .min(1)
-    .describe("Range/values pairs, each written to its own A1 range"),
-  value_input_option: valueInputOption,
-};
-
-export async function sheetsWriteRanges(
-  sheets: sheets_v4.Sheets,
-  args: ArgsOf<typeof writeRangesInput>,
-): Promise<ToolResult> {
-  const result = await new SheetsAdapter(sheets).batchWriteRanges({
-    spreadsheetId: args.spreadsheet_id,
-    data: args.data,
-    valueInputOption: args.value_input_option,
-  });
-  return toolResult(
-    `Updated ${result.totalUpdatedCells ?? 0} cells across ${result.responses.length} range(s).`,
-    {
-      total_updated_rows: result.totalUpdatedRows,
-      total_updated_columns: result.totalUpdatedColumns,
-      total_updated_cells: result.totalUpdatedCells,
-      ranges: result.responses.map((r) => ({
-        updated_range: r.updatedRange,
-        updated_rows: r.updatedRows,
-        updated_columns: r.updatedColumns,
-        updated_cells: r.updatedCells,
-      })),
-    },
-  );
-}
-
-const writeRangesTool = sheetsTool({
-  name: "sheets_write_ranges",
-  title: "Write multiple cell ranges",
-  description: `Overwrite several A1 ranges in one call (values.batchUpdate).
-
-Args:
-  - spreadsheet_id (string)
-  - data (array): [{ range: A1 string, values: CellValue[][] }, ...]
-  - value_input_option ('USER_ENTERED'|'RAW', default USER_ENTERED): applied to every range
-
-Returns: { total_updated_rows, total_updated_columns, total_updated_cells,
-  ranges:[{updated_range, updated_rows, updated_columns, updated_cells}] }`,
-  inputSchema: writeRangesInput,
-  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  run: sheetsWriteRanges,
 });
 
 const appendRowsInput = {
@@ -553,6 +519,8 @@ Args:
   - font_size (number, optional)
   - horizontal_alignment ('LEFT'|'CENTER'|'RIGHT', optional)
 
+For formatting beyond these options (borders, merges, number/date formats, conditional formatting),
+use sheets_batch_update.
 Returns: { applied, fields }`,
   inputSchema: formatCellsInput,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -597,6 +565,7 @@ Args:
   - strict (boolean, default true): reject entries not in the list
   - show_dropdown (boolean, default true): show the dropdown arrow in the UI
 
+For other validation rules (number/date/custom-formula conditions), use sheets_batch_update.
 Returns: { values }`,
   inputSchema: setDataValidationInput,
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -653,9 +622,7 @@ export const sheetsTools: readonly ToolRegistration[] = [
   createSpreadsheetTool,
   getSpreadsheetTool,
   readRangeTool,
-  readRangesTool,
   writeRangeTool,
-  writeRangesTool,
   appendRowsTool,
   clearRangeTool,
   addSheetTool,

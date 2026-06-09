@@ -13,10 +13,8 @@ import {
   sheetsFormatCells,
   sheetsGetSpreadsheet,
   sheetsReadRange,
-  sheetsReadRanges,
   sheetsSetDataValidation,
   sheetsWriteRange,
-  sheetsWriteRanges,
 } from "./tools.js";
 
 function fakeSheets() {
@@ -108,6 +106,30 @@ describe("sheetsReadRange", () => {
     expect(res.content[0].text).toContain("| h1 | h2 |");
     expect(res.structuredContent).toMatchObject({ row_count: 2 });
   });
+
+  it("batch-reads via values.batchGet when given an array of ranges", async () => {
+    const sheets = fakeSheets();
+    sheets.spreadsheets.values.batchGet.mockResolvedValue({
+      data: {
+        valueRanges: [
+          { range: "Sheet1!A1", values: [["a"]] },
+          { range: "Sheet2!A1", values: [["b"], ["c"]] },
+        ],
+      },
+    });
+    const res = await sheetsReadRange(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      range: ["Sheet1!A1", "Sheet2!A1"],
+      value_render_option: "FORMATTED_VALUE",
+      response_format: "markdown",
+    });
+    expect(sheets.spreadsheets.values.batchGet).toHaveBeenCalledWith(
+      expect.objectContaining({ ranges: ["Sheet1!A1", "Sheet2!A1"] }),
+    );
+    expect(sheets.spreadsheets.values.get).not.toHaveBeenCalled();
+    expect(res.structuredContent).toMatchObject({ count: 2 });
+    expect((res.structuredContent as { ranges: { row_count: number }[] }).ranges[1].row_count).toBe(2);
+  });
 });
 
 describe("sheetsWriteRange", () => {
@@ -129,6 +151,17 @@ describe("sheetsWriteRange", () => {
       }),
     );
     expect(res.structuredContent).toMatchObject({ updated_cells: 2 });
+  });
+
+  it("returns an error result when neither range+values nor data is given", async () => {
+    const sheets = fakeSheets();
+    const res = await sheetsWriteRange(asSheets(sheets), {
+      spreadsheet_id: "s1",
+      value_input_option: "RAW",
+    });
+    expect(res.isError).toBe(true);
+    expect(sheets.spreadsheets.values.update).not.toHaveBeenCalled();
+    expect(sheets.spreadsheets.values.batchUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -210,7 +243,7 @@ describe("sheetsSetDataValidation", () => {
   });
 });
 
-describe("sheetsWriteRanges", () => {
+describe("sheetsWriteRange (multi-range via data)", () => {
   it("sends one values.batchUpdate and reports totals + per-range counts", async () => {
     const sheets = fakeSheets();
     sheets.spreadsheets.values.batchUpdate.mockResolvedValue({
@@ -223,7 +256,7 @@ describe("sheetsWriteRanges", () => {
         ],
       },
     });
-    const res = await sheetsWriteRanges(asSheets(sheets), {
+    const res = await sheetsWriteRange(asSheets(sheets), {
       spreadsheet_id: "s1",
       data: [
         { range: "Sheet1!A1:B1", values: [["a", "b"]] },
@@ -300,13 +333,13 @@ describe("handlers surface API errors", () => {
     ).rejects.toBeDefined();
   });
 
-  it("sheetsReadRanges rejects", async () => {
+  it("sheetsReadRange rejects (batch / array range)", async () => {
     const sheets = fakeSheets();
     sheets.spreadsheets.values.batchGet.mockRejectedValue(boom);
     await expect(
-      sheetsReadRanges(asSheets(sheets), {
+      sheetsReadRange(asSheets(sheets), {
         spreadsheet_id: "s1",
-        ranges: ["A1"],
+        range: ["A1"],
         value_render_option: "FORMATTED_VALUE",
         response_format: "markdown",
       }),
@@ -326,11 +359,11 @@ describe("handlers surface API errors", () => {
     ).rejects.toBeDefined();
   });
 
-  it("sheetsWriteRanges rejects", async () => {
+  it("sheetsWriteRange rejects (batch / data)", async () => {
     const sheets = fakeSheets();
     sheets.spreadsheets.values.batchUpdate.mockRejectedValue(boom);
     await expect(
-      sheetsWriteRanges(asSheets(sheets), {
+      sheetsWriteRange(asSheets(sheets), {
         spreadsheet_id: "s1",
         data: [{ range: "A1", values: [["x"]] }],
         value_input_option: "RAW",

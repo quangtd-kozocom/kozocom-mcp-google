@@ -92,7 +92,6 @@ describe("danger classification", () => {
         "drive_download_file",
         "sheets_get_spreadsheet",
         "sheets_read_range",
-        "sheets_read_ranges",
       ]),
     );
   });
@@ -107,7 +106,6 @@ describe("danger classification", () => {
         "drive_delete_file",
         "sheets_create_spreadsheet",
         "sheets_write_range",
-        "sheets_write_ranges",
         "sheets_append_rows",
         "sheets_clear_range",
         "sheets_add_sheet",

@@ -47,8 +47,8 @@ kozocom-mcp client codex        # print safe (read-only) MCP config
 | --- | --- |
 | `sheets_create_spreadsheet` | create a spreadsheet |
 | `sheets_get_spreadsheet` | list tabs and their dimensions |
-| `sheets_read_range` / `sheets_read_ranges` | read one / many A1 ranges |
-| `sheets_write_range` / `sheets_write_ranges` | overwrite values in one / many A1 ranges |
+| `sheets_read_range` | read one A1 range, or many at once (pass an array of ranges) |
+| `sheets_write_range` | overwrite values in one A1 range, or many at once (pass `data`) |
 | `sheets_append_rows` | append rows after the last row of a table |
 | `sheets_clear_range` | clear values in a range |
 | `sheets_add_sheet` / `sheets_delete_sheet` | add / remove a tab |
