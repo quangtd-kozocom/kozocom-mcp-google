@@ -190,7 +190,7 @@ export async function getAuthenticatedClient(): Promise<OAuth2Client> {
   // refresh. Persist the refreshed access token so it survives restarts.
   client.refreshHandler = async () => {
     if (!token.refresh_token) {
-      throw new NotAuthenticatedError("No refresh token cached — run `quang-mcp auth login` again.");
+      throw new NotAuthenticatedError("No refresh token cached — run `terra-mcp auth login` again.");
     }
     const fresh = await proxyTokenExchange({
       grant_type: "refresh_token",

@@ -1,5 +1,5 @@
 {
-  "name": "quang-mcp-google",
+  "name": "terra-mcp-google",
   "version": "0.1.11",
   "description": "Kozocom MCP server",
   "type": "module",
@@ -12,8 +12,8 @@
     "access": "public"
   },
   "bin": {
-    "quang-mcp": "dist/cli.js",
-    "quang-mcp-server": "dist/index.js"
+    "terra-mcp": "dist/cli.js",
+    "terra-mcp-server": "dist/index.js"
   },
   "files": [
     "dist",

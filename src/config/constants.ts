@@ -23,7 +23,7 @@ export const IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email"
 export const SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE, ...IDENTITY_SCOPES];
 
 /** Directory holding the optional OAuth client config and cached token. */
-export const CONFIG_DIR = process.env.QUANG_MCP_DIR ?? join(homedir(), ".quang-mcp");
+export const CONFIG_DIR = process.env.TERRA_MCP_DIR ?? join(homedir(), ".terra-mcp");
 
 /** Path to an optional downloaded Google OAuth client JSON. */
 export const CLIENT_SECRET_PATH =
@@ -40,7 +40,7 @@ export const TOKEN_PATH = process.env.GOOGLE_OAUTH_TOKEN ?? join(CONFIG_DIR, "to
  * secret and completes the exchange. See the `quang-mcp-auth-proxy` repo.
  */
 export const TOKEN_PROXY_URL =
-  process.env.QUANG_MCP_TOKEN_PROXY_URL ??
+  process.env.TERRA_MCP_TOKEN_PROXY_URL ??
   "https://quang-mcp-auth-proxy.getting-started-worker.workers.dev/token";
 
 /**
@@ -49,7 +49,7 @@ export const TOKEN_PROXY_URL =
  * protection is PKCE (binds each auth code to the CLI that started the flow).
  */
 export const PROXY_SHARED_KEY =
-  process.env.QUANG_MCP_PROXY_KEY ??
+  process.env.TERRA_MCP_PROXY_KEY ??
   "f80350f60e2c7950b72f3041c673d1194d45efa38217237ecc7bf87530f093d5";
 
 /** Maximum characters returned in a single tool response before truncation. */
@@ -60,10 +60,10 @@ export const CHARACTER_LIMIT = 25000;
  * destructive tools (delete/clear) are not registered. The `config` CLI command
  * emits this in the generated MCP config so AI clients can't destroy data.
  */
-const SAFE_MODE_ENV = "QUANG_MCP_SAFE_MODE";
+const SAFE_MODE_ENV = "TERRA_MCP_SAFE_MODE";
 
 /** Whether this process is running with dangerous tools disabled. */
 export const SAFE_MODE = process.env[SAFE_MODE_ENV] === "1";
 
 /** Env var naming the only directory local_path/save_path may read/write. */
-export const LOCAL_FILE_ROOT_ENV = "QUANG_MCP_LOCAL_FILE_ROOT";
+export const LOCAL_FILE_ROOT_ENV = "TERRA_MCP_LOCAL_FILE_ROOT";

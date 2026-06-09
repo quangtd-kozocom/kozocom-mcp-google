@@ -1,4 +1,4 @@
-# quang-mcp — Google Drive + Sheets MCP server
+# terra-mcp — Google Drive + Sheets MCP server
 
 Read/write access to your **Google Drive** and **Sheets**. OAuth + PKCE login — only the public
 client ID ships in npm, consent happens in browser, token is cached and auto-refreshed.
@@ -6,9 +6,9 @@ client ID ships in npm, consent happens in browser, token is cached and auto-ref
 ## Quick start
 
 ```bash
-npm install -g quang-mcp-google
-quang-mcp auth login          # browser consent, caches token
-quang-mcp client codex        # print safe (read-only) MCP config
+npm install -g terra-mcp-google
+terra-mcp auth login          # browser consent, caches token
+terra-mcp client codex        # print safe (read-only) MCP config
 ```
 
 ## CLI
@@ -22,7 +22,7 @@ quang-mcp client codex        # print safe (read-only) MCP config
 
 ## Tools
 
-**Auth** — sign-in/out are CLI-only (`quang-mcp auth login`/`logout`).
+**Auth** — sign-in/out are CLI-only (`terra-mcp auth login`/`logout`).
 
 | Tool | Does |
 | --- | --- |
