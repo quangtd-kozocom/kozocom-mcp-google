@@ -1,6 +1,6 @@
 {
   "name": "@quangtd-kozocom/kozocom-mcp-google",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Kozocom MCP server",
   "type": "module",
   "packageManager": "pnpm@11.5.2",
