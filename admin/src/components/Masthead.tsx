@@ -1,31 +1,23 @@
 import type { Health } from "../lib/types";
-import { VaultCrest } from "./VaultCrest";
 
-export function Masthead({ health }: { health: Health | null }) {
+export function Masthead({ health, demo }: { health: Health | null; demo: boolean }) {
   const signedIn = health?.signedIn ?? false;
   const email = health?.email ?? null;
 
   return (
-    <header className="masthead stagger" style={{ animationDelay: "40ms" }}>
+    <div className="masthead">
       <div className="brand">
-        <div className="crest" aria-hidden="true">
-          <VaultCrest />
-        </div>
+        <div className="mark" aria-hidden="true" />
         <div>
-          <h1>
-            Terra <em>Gate</em>
-          </h1>
-          <div className="tagline">Permission Vault · Access Console</div>
+          <h1>Terra Gate</h1>
         </div>
       </div>
 
-      <div className="identity">
-        <div className="label">Guarded account</div>
-        <div className="email">
-          <span className={`dot${signedIn ? "" : " off"}`} aria-hidden="true" />
-          {signedIn ? (email ?? "signed in") : "not signed in"}
-        </div>
+      <div className="account-chip" data-state={signedIn ? "in" : "out"}>
+        <span className="status-dot" aria-hidden="true" />
+        <span>{signedIn ? (email ?? "signed in") : "not signed in"}</span>
+        {demo && <em>demo</em>}
       </div>
-    </header>
+    </div>
   );
 }

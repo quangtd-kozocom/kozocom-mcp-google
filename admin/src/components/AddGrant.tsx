@@ -1,5 +1,6 @@
-import { useEffect, useId, useReducer } from "react";
+import { useEffect, useId, useReducer, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Search, X } from "lucide-react";
 import { api } from "../lib/api";
 import type { DriveItem, Kind, NewGrant } from "../lib/types";
 import { useToast } from "./Toasts";
@@ -7,7 +8,6 @@ import { KindIcon } from "./icons";
 import { middleTruncate } from "../lib/format";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
@@ -66,15 +66,30 @@ function reducer(state: AddGrantState, action: AddGrantAction): AddGrantState {
   return initialState;
 }
 
-export function AddGrant({ onAdded }: { onAdded: () => void }) {
+export function AddGrant({
+  open,
+  onOpenChange,
+  onAdded,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdded: () => void;
+}) {
   const { notify } = useToast();
   const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(reducer, initialState);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
 
   const searchFieldId = useId();
   const idFieldId = useId();
   const kindFieldId = useId();
   const { selected, manualId, manualKind, query, debouncedQuery, perms } = state;
+
+  useEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, [open]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -98,6 +113,7 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
     onSuccess: (grant) => {
       notify(`Granted access to ${grant.name ?? "resource"}`, "success");
       dispatch({ type: "reset" });
+      onOpenChange(false);
       void queryClient.invalidateQueries({ queryKey: ["grants"] });
       onAdded();
     },
@@ -127,22 +143,33 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
     addGrantMutation.mutate(body);
   }
 
-  return (
-    <section className="panel" aria-labelledby="add-head">
-      <div className="panel-head">
-        <h2 id="add-head">Grant Access</h2>
-      </div>
+  if (!open) return null;
 
-      <form className="add-grid" onSubmit={submit}>
-        {/* Left: choose a resource */}
-        <Card className="card">
-          <CardHeader>
-            <CardTitle>Choose a resource</CardTitle>
-            <CardDescription className="sub">
-              Search your Drive by name, or paste a raw Google ID.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="card-content">
+  return (
+    <dialog
+      ref={dialogRef}
+      className="drawer-dialog"
+      onClose={() => onOpenChange(false)}
+    >
+      <div className="drawer add-drawer" aria-labelledby="add-head">
+        <div className="drawer-head">
+          <div>
+            <p className="kicker">Allowlist</p>
+            <h2 id="add-head">Add grant</h2>
+          </div>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Close add grant"
+            onClick={() => onOpenChange(false)}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        <form className="drawer-body" onSubmit={submit}>
+          <section className="drawer-section">
+            <h3>Resource</h3>
             {selected ? (
               <div className="selected">
                 <KindIcon kind={selected.kind} className="" />
@@ -158,21 +185,24 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
                   onClick={() => dispatch({ type: "reset" })}
                   aria-label="Clear selection"
                 >
-                  ×
+                  <X size={14} aria-hidden="true" />
                 </Button>
               </div>
             ) : (
               <>
                 <Label className="field" htmlFor={searchFieldId}>
                   <span>Search Drive</span>
-                  <Input
-                    id={searchFieldId}
-                    type="text"
-                    value={query}
-                    placeholder="e.g. Budget, Roadmap…"
-                    autoComplete="off"
-                    onChange={(e) => dispatch({ type: "query", query: e.target.value })}
-                  />
+                  <span className="search-box">
+                    <Search size={15} aria-hidden="true" />
+                    <Input
+                      id={searchFieldId}
+                      type="text"
+                      value={query}
+                      placeholder="Budget, Roadmap"
+                      autoComplete="off"
+                      onChange={(e) => dispatch({ type: "query", query: e.target.value })}
+                    />
+                  </span>
                 </Label>
 
                 <ul className="results" aria-label="Search results">
@@ -194,19 +224,19 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
                 </ul>
                 <p className="search-hint">
                   {searching
-                    ? "searching…"
+                    ? "searching"
                     : query.trim().length >= 2 && results.length === 0
-                      ? "no matches — or paste an ID below"
+                      ? "no matches; paste an ID below"
                       : "type at least 2 characters"}
                 </p>
 
                 <Label className="field" htmlFor={idFieldId} style={{ marginTop: 16 }}>
-                  <span>…or paste a raw Google ID</span>
+                  <span>Paste Google ID</span>
                   <Input
                     id={idFieldId}
                     type="text"
                     value={manualId}
-                    placeholder="1AbCdEf…"
+                    placeholder="1AbCdEf"
                     autoComplete="off"
                     onChange={(e) => dispatch({ type: "manual_id", id: e.target.value })}
                   />
@@ -235,18 +265,10 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
                 )}
               </>
             )}
-          </CardContent>
-        </Card>
+          </section>
 
-        {/* Right: set powers */}
-        <Card className="card">
-          <CardHeader>
-            <CardTitle>Grant powers</CardTitle>
-            <CardDescription className="sub">
-              Read-only is the safe starting point. Add more as needed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="card-content">
+          <section className="drawer-section">
+            <h3>Permissions</h3>
             <div className="perm-row">
               {PERM_CHOICES.map(({ key, perm, name, desc }) => {
                 const on = perms[key];
@@ -260,6 +282,9 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
                     aria-pressed={on}
                     onClick={() => dispatch({ type: "toggle_perm", key })}
                   >
+                    <span className="signal" aria-hidden="true">
+                      {on ? "●" : "○"}
+                    </span>
                     <span className="pc-name">{name}</span>
                     <span className="pc-desc">{desc}</span>
                   </button>
@@ -268,11 +293,11 @@ export function AddGrant({ onAdded }: { onAdded: () => void }) {
             </div>
 
             <Button type="submit" className="btn" disabled={!canSubmit}>
-              {addGrantMutation.isPending ? "Sealing…" : "Add to allowlist"}
+              {addGrantMutation.isPending ? "Adding..." : "Add to allowlist"}
             </Button>
-          </CardContent>
-        </Card>
-      </form>
-    </section>
+          </section>
+        </form>
+      </div>
+    </dialog>
   );
 }

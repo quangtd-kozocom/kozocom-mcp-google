@@ -1,42 +1,69 @@
-import { useMemo } from "react";
-import type { ColumnDef } from "@tanstack/react-table";
-import { flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
-import type { Grant } from "../lib/types";
+import { useEffect, useMemo, useReducer, useRef } from "react";
+import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { MoreVertical, Search, X } from "lucide-react";
+import type { Grant, Kind } from "../lib/types";
 import { formatDate } from "../lib/format";
 import { CopyId } from "./CopyId";
-import { EmptyVault } from "./EmptyVault";
 import { GrantPermissions } from "./GrantPermissions";
 import { KindIcon } from "./icons";
 import { RevokeButton } from "./RevokeButton";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "./ui/table";
 
 type PermKey = "canRead" | "canWrite" | "canDelete";
+type KindFilter = Kind | "all";
+type TableState = {
+  query: string;
+  kind: KindFilter;
+  riskOnly: boolean;
+  sorting: SortingState;
+  scrollTop: number;
+  selectedId: number | null;
+};
+type TableAction =
+  | { type: "query"; query: string }
+  | { type: "kind"; kind: KindFilter }
+  | { type: "risk" }
+  | { type: "sorting"; sorting: SortingState | ((current: SortingState) => SortingState) }
+  | { type: "scroll"; scrollTop: number }
+  | { type: "select"; selectedId: number | null };
 
-function makeColumns({
-  onToggle,
-  onRevoke,
-}: {
-  onToggle: (id: number, key: PermKey, next: boolean) => void;
-  onRevoke: (id: number) => void;
-}): ColumnDef<Grant>[] {
+const ROW_HEIGHT = 36;
+const VIEWPORT_HEIGHT = 680;
+const OVERSCAN = 8;
+const initialTableState: TableState = {
+  query: "",
+  kind: "all",
+  riskOnly: false,
+  sorting: [],
+  scrollTop: 0,
+  selectedId: null,
+};
+
+const KINDS: KindFilter[] = ["all", "file", "folder", "spreadsheet"];
+const PERMS: { key: PermKey; label: string; perm: string }[] = [
+  { key: "canRead", label: "R", perm: "read" },
+  { key: "canWrite", label: "W", perm: "write" },
+  { key: "canDelete", label: "D", perm: "delete" },
+];
+
+function makeColumns(): ColumnDef<Grant>[] {
   return [
     {
       id: "resource",
+      accessorFn: (grant) => grant.name ?? grant.googleId,
       header: "Resource",
       cell: ({ row }) => (
-        <div className="resource-cell">
-          <strong>{row.original.name ?? "Untitled resource"}</strong>
-          <span>added {formatDate(row.original.createdAt)}</span>
-        </div>
+        <span className="resource-button">
+          <KindIcon kind={row.original.kind} />
+          <span>{row.original.name ?? "Untitled resource"}</span>
+        </span>
       ),
     },
     {
@@ -50,21 +77,55 @@ function makeColumns({
       ),
     },
     {
-      accessorKey: "googleId",
-      header: "Google ID",
-      cell: ({ row }) => <CopyId value={row.original.googleId} />,
-    },
-    {
-      id: "permissions",
-      header: "Permissions",
-      cell: ({ row }) => <GrantPermissions grant={row.original} onToggle={onToggle} />,
+      id: "risk",
+      accessorFn: (grant) => Number(grant.canWrite) + Number(grant.canDelete) * 2,
+      header: "R/W/D",
+      cell: ({ row }) => (
+        <div className="status-lights" aria-label="Read write delete status">
+          {PERMS.map(({ key, label, perm }) => {
+            const granted = row.original[key];
+            const risk = key === "canDelete" && granted;
+            return (
+              <span
+                key={key}
+                className="status-badge"
+                data-perm={perm}
+                data-on={granted}
+                data-risk={risk}
+                title={`${label}: ${granted ? "granted" : "denied"}`}
+              >
+                <span aria-hidden="true">{granted ? (risk ? "△" : "●") : "○"}</span>
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      ),
     },
     {
       id: "action",
-      header: "Action",
-      cell: ({ row }) => <RevokeButton grantId={row.original.id} onRevoke={onRevoke} />,
+      header: "",
+      enableSorting: false,
+      cell: () => (
+        <span className="kebab" aria-label="Open grant detail">
+          <MoreVertical size={15} aria-hidden="true" />
+        </span>
+      ),
     },
   ];
+}
+
+function tableReducer(state: TableState, action: TableAction): TableState {
+  if (action.type === "query") return { ...state, query: action.query, scrollTop: 0 };
+  if (action.type === "kind") return { ...state, kind: action.kind, scrollTop: 0 };
+  if (action.type === "risk") return { ...state, riskOnly: !state.riskOnly, scrollTop: 0 };
+  if (action.type === "sorting") {
+    const sorting =
+      typeof action.sorting === "function" ? action.sorting(state.sorting) : action.sorting;
+    return { ...state, sorting };
+  }
+  if (action.type === "scroll") return { ...state, scrollTop: action.scrollTop };
+  return { ...state, selectedId: action.selectedId };
 }
 
 export function GrantsTable({
@@ -78,73 +139,210 @@ export function GrantsTable({
   onToggle: (id: number, key: PermKey, next: boolean) => void;
   onRevoke: (id: number) => void;
 }) {
-  const columns = useMemo(() => makeColumns({ onToggle, onRevoke }), [onToggle, onRevoke]);
+  const [state, dispatch] = useReducer(tableReducer, initialTableState);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const detailDialogRef = useRef<HTMLDialogElement | null>(null);
+  const { query, kind, riskOnly, sorting, scrollTop, selectedId } = state;
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return grants.filter((grant) => {
+      const matchesTerm =
+        !term ||
+        (grant.name ?? "").toLowerCase().includes(term) ||
+        grant.googleId.toLowerCase().includes(term);
+      const matchesKind = kind === "all" || grant.kind === kind;
+      const matchesRisk = !riskOnly || grant.canWrite || grant.canDelete;
+      return matchesTerm && matchesKind && matchesRisk;
+    });
+  }, [grants, kind, query, riskOnly]);
+
   const table = useReactTable({
-    data: grants,
-    columns,
+    data: filtered,
+    columns: useMemo(() => makeColumns(), []),
+    state: { sorting },
+    onSortingChange: (updater) => dispatch({ type: "sorting", sorting: updater }),
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   });
 
+  const rows = table.getRowModel().rows;
+  const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const end = Math.min(rows.length, Math.ceil((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + OVERSCAN);
+  const visibleRows = rows.slice(start, end);
+  const selected = grants.find((grant) => grant.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (!selected) return;
+    const dialog = detailDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, [selected]);
+
   return (
-    <section className="panel allowlist-panel" aria-labelledby="allowlist-head">
-      <div className="panel-head table-panel-head">
+    <main className="allowlist" aria-labelledby="allowlist-head">
+      <div className="table-toolbar">
         <div>
-          <h2 id="allowlist-head">Allowlist</h2>
-          <p>Designed for large Drive inventories. Search and filters can attach to this table model.</p>
+          <p className="kicker">Allowlist</p>
+          <h2 id="allowlist-head">Resource grants</h2>
         </div>
-        <span className="count">
-          {grants.length} {grants.length === 1 ? "grant" : "grants"}
-        </span>
+        <div className="table-count">
+          <strong>{filtered.length}</strong>
+          <span>/ {grants.length}</span>
+        </div>
+        <label className="filter-search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            placeholder="Search name or ID"
+            onChange={(event) => {
+              dispatch({ type: "query", query: event.target.value });
+              scrollRef.current?.scrollTo({ top: 0 });
+            }}
+          />
+        </label>
+        <div className="chip-row" aria-label="Kind filter">
+          {KINDS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              className="filter-chip"
+              data-active={kind === value}
+              onClick={() => {
+                dispatch({ type: "kind", kind: value });
+                scrollRef.current?.scrollTo({ top: 0 });
+              }}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="risk-chip"
+          data-active={riskOnly}
+          onClick={() => {
+            dispatch({ type: "risk" });
+            scrollRef.current?.scrollTo({ top: 0 });
+          }}
+        >
+          △ Write/Delete
+        </button>
       </div>
 
-      <div className="table-wrap">
+      <section className="table-shell">
         {loading ? (
           <div className="grant-skeletons" aria-label="Loading grants">
             <Skeleton />
             <Skeleton />
             <Skeleton />
+            <Skeleton />
           </div>
-        ) : grants.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="empty">
-            <div className="vault-ill">
-              <EmptyVault />
-            </div>
-            <h3>No grants yet</h3>
-            <p>
-              Add a file, folder or spreadsheet. In strict mode, ungranted Drive data stays
-              invisible to the agent.
-            </p>
-            <div className="arrow">add first grant</div>
+            <div className="empty-mark" aria-hidden="true" />
+            <h3>No matching grants</h3>
+            <p>Add a grant or loosen the current filters.</p>
           </div>
         ) : (
-          <Table className="grants">
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} scope="col">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <>
+            <div className="grant-head">
+              {table.getHeaderGroups()[0]?.headers.map((header) => {
+                const sorted = header.column.getIsSorted();
+                return (
+                  <button
+                    key={header.id}
+                    type="button"
+                    role="columnheader"
+                    className="head-cell"
+                    data-col={header.id}
+                    disabled={!header.column.getCanSort()}
+                    onClick={header.column.getToggleSortingHandler()}
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    {sorted && <span aria-hidden="true">{sorted === "asc" ? "↑" : "↓"}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              ref={scrollRef}
+              className="grant-viewport"
+              style={{ height: VIEWPORT_HEIGHT }}
+              onScroll={(event) =>
+                dispatch({ type: "scroll", scrollTop: event.currentTarget.scrollTop })
+              }
+            >
+              <div className="grant-spacer" style={{ height: rows.length * ROW_HEIGHT }}>
+                {visibleRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="grant-row"
+                    style={{ transform: `translateY(${row.index * ROW_HEIGHT}px)` }}
+                    onClick={() => dispatch({ type: "select", selectedId: row.original.id })}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <span key={cell.id} className="body-cell" data-col={cell.column.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </span>
+                    ))}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
-      </div>
-    </section>
+      </section>
+
+      {selected && (
+        <dialog
+          ref={detailDialogRef}
+          className="drawer-dialog"
+          onClose={() => dispatch({ type: "select", selectedId: null })}
+        >
+          <div className="drawer detail-drawer" aria-labelledby="grant-detail-head">
+            <div className="drawer-head">
+              <div>
+                <p className="kicker">Grant detail</p>
+                <h2 id="grant-detail-head">{selected.name ?? "Untitled resource"}</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Close grant detail"
+                onClick={() => dispatch({ type: "select", selectedId: null })}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="drawer-body">
+              <section className="drawer-section">
+                <h3>Permissions</h3>
+                <GrantPermissions grant={selected} onToggle={onToggle} />
+              </section>
+              <section className="drawer-section">
+                <h3>Resource</h3>
+                <div className="detail-grid">
+                  <span>Kind</span>
+                  <Badge className="badge" data-kind={selected.kind} variant="outline">
+                    <KindIcon kind={selected.kind} />
+                    {selected.kind}
+                  </Badge>
+                  <span>Google ID</span>
+                  <CopyId value={selected.googleId} />
+                  <span>Added</span>
+                  <code>{formatDate(selected.createdAt)}</code>
+                </div>
+              </section>
+              <section className="drawer-section danger-zone">
+                <h3>Revoke</h3>
+                <RevokeButton grantId={selected.id} onRevoke={onRevoke} />
+              </section>
+            </div>
+          </div>
+        </dialog>
+      )}
+    </main>
   );
 }

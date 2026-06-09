@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Settings } from "lucide-react";
 import { api, isUsingFallback } from "./lib/api";
 import type { Grant, Health, Mode } from "./lib/types";
 import { Masthead } from "./components/Masthead";
@@ -7,8 +8,6 @@ import { ModeSwitcher } from "./components/ModeSwitcher";
 import { GrantsTable } from "./components/GrantsTable";
 import { AddGrant } from "./components/AddGrant";
 import { useToast } from "./components/Toasts";
-import { ThemeControls } from "./components/ThemeControls";
-import type { ThemeMode, ThemeTone } from "./components/ThemeControls";
 
 type PermKey = "canRead" | "canWrite" | "canDelete";
 const POLL_MS = 4000;
@@ -16,21 +15,12 @@ const queryKeys = {
   health: ["health"] as const,
   grants: ["grants"] as const,
 };
-const THEME_KEY = "terra-admin-theme";
-const MODE_KEY = "terra-admin-mode";
 
 export function App() {
   const { notify } = useToast();
   const queryClient = useQueryClient();
-  const [themeTone, setThemeTone] = useState<ThemeTone>(() => readStored("theme", "graphite"));
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readStored("mode", "light"));
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeTone;
-    document.documentElement.dataset.mode = themeMode;
-    window.localStorage.setItem(THEME_KEY, themeTone);
-    window.localStorage.setItem(MODE_KEY, themeMode);
-  }, [themeTone, themeMode]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { data: healthData } = useQuery({
     queryKey: queryKeys.health,
@@ -134,64 +124,53 @@ export function App() {
 
   return (
     <div className="shell">
-      <Masthead health={health} />
-      <ThemeControls
-        tone={themeTone}
-        mode={themeMode}
-        onToneChange={setThemeTone}
-        onModeChange={setThemeMode}
-      />
+      <header className="topbar">
+        <Masthead health={health} demo={demo} />
+        <nav className="top-actions" aria-label="Console controls">
+          <ModeSwitcher mode={health?.mode ?? "read_open"} onChange={changeMode} />
+          <button type="button" className="action-btn primary" onClick={() => setAddOpen(true)}>
+            <Plus size={15} aria-hidden="true" />
+            Add grant
+          </button>
+          <div className="settings-wrap">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Settings"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <Settings size={16} aria-hidden="true" />
+            </button>
+            {settingsOpen && (
+              <div className="settings-popover" role="menu">
+                <div className="menu-kicker">Display</div>
+                <button type="button" role="menuitem" className="menu-row" disabled>
+                  Dark precision
+                  <span>active</span>
+                </button>
+                <button type="button" role="menuitem" className="menu-row" disabled>
+                  Light mode
+                  <span>later</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </nav>
+      </header>
 
       {!signedIn && health && (
-        <div className="notice stagger" style={{ animationDelay: "120ms" }}>
-          <div>
-            <h3>No account is signed in</h3>
-            <p>
-              Terra Gate can't guard a Drive it can't reach. Open a terminal and run{" "}
-              <code>terra-mcp auth login</code> to grant Terra Gate access to your Google
-              account, then refresh this page.
-            </p>
-          </div>
+        <div className="notice">
+          <strong>No Google account connected.</strong>
+          <span>
+            Run <code>terra-mcp auth login</code>, then refresh. Docs are in README.md.
+          </span>
         </div>
       )}
-
-      {demo && (
-        <div className="demo-banner stagger" style={{ animationDelay: "160ms" }}>
-          <span className="ddot" aria-hidden="true" />
-          backend unreachable — showing live demo data
-        </div>
-      )}
-
-      <div className="control-grid stagger" style={{ animationDelay: "200ms" }}>
-        <ModeSwitcher mode={health?.mode ?? "read_open"} onChange={changeMode} />
-
-        <AddGrant onAdded={refreshGrants} />
-      </div>
-
-      <div className="stagger" style={{ animationDelay: "300ms" }}>
-        <GrantsTable
-          grants={grants}
-          loading={grantsLoading}
-          onToggle={togglePerm}
-          onRevoke={revoke}
-        />
-      </div>
-
-      <footer className="footer">
-        <span>Terra Gate · guarding Google Drive &amp; Sheets</span>
-        <span>read · write · delete — you hold the keys</span>
-      </footer>
+      <AddGrant open={addOpen} onOpenChange={setAddOpen} onAdded={refreshGrants} />
+      <GrantsTable grants={grants} loading={grantsLoading} onToggle={togglePerm} onRevoke={revoke} />
     </div>
   );
-}
-
-function readStored<T extends string>(key: "theme" | "mode", fallback: T): T {
-  const storageKey = key === "theme" ? THEME_KEY : MODE_KEY;
-  try {
-    return (window.localStorage.getItem(storageKey) as T | null) ?? fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function labelForMode(mode: Mode): string {
