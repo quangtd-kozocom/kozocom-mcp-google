@@ -6,7 +6,6 @@ import { Auth, google } from "googleapis";
 import {
   CLIENT_SECRET_PATH,
   CONFIG_DIR,
-  hasExplicitCredentialsPath,
   PROXY_SHARED_KEY,
   SCOPES,
   TOKEN_PATH,
@@ -55,8 +54,7 @@ const SUCCESS_HTML = (email?: string) =>
 
 /** Read and normalize the OAuth client config (embedded client or local JSON). */
 export async function readClientSecret(): Promise<ClientSecret> {
-  const explicitCredentialsPath = hasExplicitCredentialsPath();
-  if (!explicitCredentialsPath && EMBEDDED_OAUTH_CLIENT) {
+  if (EMBEDDED_OAUTH_CLIENT) {
     return EMBEDDED_OAUTH_CLIENT;
   }
 
@@ -66,8 +64,7 @@ export async function readClientSecret(): Promise<ClientSecret> {
   } catch {
     throw new NotAuthenticatedError(
       `No OAuth client config found at ${CLIENT_SECRET_PATH}. ` +
-        `Use a package built with the embedded OAuth client, place one there, ` +
-        `or set GOOGLE_OAUTH_CREDENTIALS to its path.`,
+        `Use a package built with the embedded OAuth client, or place one there.`,
     );
   }
   const parsed = JSON.parse(raw) as Record<string, { client_id?: string; client_secret?: string }>;

@@ -1,7 +1,7 @@
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stderr as output } from "node:process";
-import { CLIENT_SECRET_PATH, CONFIG_DIR, hasExplicitCredentialsPath } from "../config/constants.js";
+import { CLIENT_SECRET_PATH, CONFIG_DIR } from "../config/constants.js";
 import { getAuthStatus } from "../google/auth.js";
 import { EMBEDDED_OAUTH_CLIENT } from "../google/generated/oauth-client.js";
 import { DANGEROUS_TOOL_NAMES, READ_ONLY_TOOL_NAMES } from "../services/registry.js";
@@ -19,7 +19,6 @@ interface McpSnippetOptions {
   client: ClientName;
   command?: string;
   args?: string[];
-  credentialsPath?: string | null;
   /**
    * When true, the emitted config disables the dangerous (mutating) tools using
    * each client's own mechanism, leaving only the read-only tools enabled.
@@ -56,15 +55,12 @@ function tomlStringArray(items: readonly string[]): string {
   return `[\n${items.map((item) => `  ${JSON.stringify(item)},`).join("\n")}\n]`;
 }
 
-function codexSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
+function codexSnippet(command: string, args: string[], safeMode: boolean): string {
   const lines = [
     `[mcp_servers.${SERVER_KEY}]`,
     `command = ${JSON.stringify(command)}`,
     `args = ${JSON.stringify(args)}`,
   ];
-  if (credentialsPath) {
-    lines.push(`env = { GOOGLE_OAUTH_CREDENTIALS = ${JSON.stringify(credentialsPath)} }`);
-  }
   if (safeMode) {
     // Codex gates tools natively via enabled_tools / disabled_tools.
     lines.push(`enabled_tools = ${tomlStringArray(READ_ONLY_TOOL_NAMES)}`);
@@ -73,9 +69,8 @@ function codexSnippet(command: string, args: string[], credentialsPath: string |
   return lines.join("\n");
 }
 
-function claudeSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
-  const env = credentialsPath ? `--env GOOGLE_OAUTH_CREDENTIALS=${shellQuote(credentialsPath)} ` : "";
-  const add = `claude mcp add ${SERVER_KEY} ${env}-- ${[command, ...args].map(shellQuote).join(" ")}`;
+function claudeSnippet(command: string, args: string[], safeMode: boolean): string {
+  const add = `claude mcp add ${SERVER_KEY} -- ${[command, ...args].map(shellQuote).join(" ")}`;
   if (!safeMode) return add;
   // Claude Code gates MCP tools via permission rules in .claude/settings.json.
   const deny = JSON.stringify(
@@ -86,7 +81,7 @@ function claudeSnippet(command: string, args: string[], credentialsPath: string 
   return `${add}\n\nThen deny the dangerous tools in .claude/settings.json:\n\n${deny}`;
 }
 
-function copilotSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
+function copilotSnippet(command: string, args: string[], safeMode: boolean): string {
   return JSON.stringify(
     {
       servers: {
@@ -94,7 +89,6 @@ function copilotSnippet(command: string, args: string[], credentialsPath: string
           type: "stdio",
           command,
           args,
-          ...(credentialsPath ? { env: { GOOGLE_OAUTH_CREDENTIALS: credentialsPath } } : {}),
           // VS Code has no per-tool config key, so the read-only set is named
           // here for clarity; toggle the rest off in the Copilot tools picker.
           ...(safeMode ? { tools: [...READ_ONLY_TOOL_NAMES] } : {}),
@@ -106,14 +100,13 @@ function copilotSnippet(command: string, args: string[], credentialsPath: string
   );
 }
 
-function kiroSnippet(command: string, args: string[], credentialsPath: string | null, safeMode: boolean): string {
+function kiroSnippet(command: string, args: string[], safeMode: boolean): string {
   return JSON.stringify(
     {
       mcpServers: {
         [SERVER_KEY]: {
           command,
           args,
-          ...(credentialsPath ? { env: { GOOGLE_OAUTH_CREDENTIALS: credentialsPath } } : {}),
           disabled: false,
           // Kiro has no per-tool disable key, so auto-approve only the read-only
           // tools; the dangerous ones still require an explicit confirmation.
@@ -133,13 +126,12 @@ export function mcpConfigSnippet({
   // steal `-p` as its own --print flag, dropping into chat mode instead of adding
   // the server. The long form passes through to npx untouched on every client.
   args = ["-y", `--package=${PACKAGE_NAME}`, "terra-mcp"],
-  credentialsPath = null,
   safeMode = false,
 }: McpSnippetOptions): string {
-  const codex = codexSnippet(command, args, credentialsPath, safeMode);
-  const claude = claudeSnippet(command, args, credentialsPath, safeMode);
-  const copilot = copilotSnippet(command, args, credentialsPath, safeMode);
-  const kiro = kiroSnippet(command, args, credentialsPath, safeMode);
+  const codex = codexSnippet(command, args, safeMode);
+  const claude = claudeSnippet(command, args, safeMode);
+  const copilot = copilotSnippet(command, args, safeMode);
+  const kiro = kiroSnippet(command, args, safeMode);
 
   const codexSection = `Codex (~/.codex/config.toml):\n\n${codex}`;
   const claudeSection = `Claude Code:\n\n${claude}`;
@@ -207,14 +199,13 @@ async function chooseClient(defaultClient: ClientName, yes: boolean): Promise<Cl
 
 export async function runSetup(options: SetupOptions = {}): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
-  const explicitCredentialsPath = hasExplicitCredentialsPath();
 
   console.error(`Config directory: ${CONFIG_DIR}`);
-  console.error(`OAuth client config: ${CLIENT_SECRET_PATH}`);
 
-  if (!explicitCredentialsPath && EMBEDDED_OAUTH_CLIENT) {
+  if (EMBEDDED_OAUTH_CLIENT) {
     console.error("OAuth client config: using embedded OAuth client.");
   } else {
+    console.error(`OAuth client config: ${CLIENT_SECRET_PATH}`);
     if (!(await exists(CLIENT_SECRET_PATH))) {
       console.error(
         "\nNo OAuth client config was found. Install a package built with the embedded OAuth client, or save a Google OAuth client JSON here:",

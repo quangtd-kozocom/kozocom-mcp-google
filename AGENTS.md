@@ -101,8 +101,8 @@ mock `../google.js` only for the auth-failure path. Each handler needs happy-pat
 
 ## Auth & secrets
 
-- Token in `~/.terra-mcp/` (override: `TERRA_MCP_DIR`, `GOOGLE_OAUTH_CREDENTIALS`,
-  `GOOGLE_OAUTH_TOKEN`). `client_secret.json` / `token.json` are **git-ignored — never commit**.
+- Token in `~/.terra-mcp/` (override: `TERRA_MCP_DIR`, `GOOGLE_OAUTH_TOKEN`).
+  `client_secret.json` / `token.json` are **git-ignored — never commit**.
 - Published package embeds only public OAuth `client_id`; login uses PKCE. Scopes in `config/constants.ts`; changing them needs re-login
   (delete old token first). External+Testing consent expires refresh tokens after 7 days — prefer
   **Internal** for Workspace orgs.

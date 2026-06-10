@@ -30,8 +30,6 @@ export const SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE, ...IDENTITY_SCOPES];
 export const ENV = {
   /** Directory holding the OAuth client config + cached token. */
   CONFIG_DIR: "TERRA_MCP_DIR",
-  /** Path to a Google OAuth client JSON; overrides the embedded client. */
-  OAUTH_CREDENTIALS: "GOOGLE_OAUTH_CREDENTIALS",
   /** Path to the cached OAuth token (access + refresh). */
   OAUTH_TOKEN: "GOOGLE_OAUTH_TOKEN",
   /** "1" → run in safe mode: register only read-only tools. */
@@ -49,20 +47,15 @@ export const ENV = {
 /** Directory holding the optional OAuth client config and cached token. */
 export const CONFIG_DIR = process.env[ENV.CONFIG_DIR] ?? join(homedir(), ".terra-mcp");
 
-/** Path to an optional downloaded Google OAuth client JSON. */
-export const CLIENT_SECRET_PATH =
-  process.env[ENV.OAUTH_CREDENTIALS] ?? join(CONFIG_DIR, "client_secret.json");
+/**
+ * Path to a downloaded Google OAuth client JSON, used only when the package was
+ * built without an embedded OAuth client (e.g. running from source). End-user
+ * packages embed a public `client_id` and never read this file.
+ */
+export const CLIENT_SECRET_PATH = join(CONFIG_DIR, "client_secret.json");
 
 /** Path to the cached OAuth token (access + refresh). */
 export const TOKEN_PATH = process.env[ENV.OAUTH_TOKEN] ?? join(CONFIG_DIR, "token.json");
-
-/**
- * Whether `GOOGLE_OAUTH_CREDENTIALS` was set explicitly (vs. falling back to the
- * default path). Read lazily — tests stub the env at runtime, and "explicit?" is
- * a runtime question, so this is evaluated per call, not frozen at import.
- */
-export const hasExplicitCredentialsPath = (): boolean =>
-  process.env[ENV.OAUTH_CREDENTIALS] !== undefined;
 
 /**
  * OAuth token-exchange proxy. Google "Desktop" clients are confidential — the

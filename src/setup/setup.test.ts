@@ -20,18 +20,12 @@ describe("parseClient", () => {
 describe("mcpConfigSnippet", () => {
   it("builds a Codex config for npx usage", () => {
     expect(
-      mcpConfigSnippet({
-        client: "codex",
-        credentialsPath: "/tmp/client_secret.json",
-      }),
+      mcpConfigSnippet({ client: "codex" }),
     ).toContain('args = ["-y","--package=terra-mcp-google","terra-mcp"]');
   });
 
   it("builds VS Code Copilot JSON", () => {
-    const snippet = mcpConfigSnippet({
-      client: "copilot",
-      credentialsPath: "/tmp/client_secret.json",
-    });
+    const snippet = mcpConfigSnippet({ client: "copilot" });
 
     expect(JSON.parse(snippet.split("\n\n")[1] ?? "")).toEqual({
       servers: {
@@ -39,25 +33,19 @@ describe("mcpConfigSnippet", () => {
           type: "stdio",
           command: "npx",
           args: ["-y", "--package=terra-mcp-google", "terra-mcp"],
-          env: { GOOGLE_OAUTH_CREDENTIALS: "/tmp/client_secret.json" },
         },
       },
     });
   });
 
-  it("omits the credentials env by default for embedded-client packages", () => {
-    const snippet = mcpConfigSnippet({ client: "codex" });
-    expect(snippet).not.toContain("GOOGLE_OAUTH_CREDENTIALS");
-  });
-
   it("omits tool-gating when not in safe mode", () => {
-    const snippet = mcpConfigSnippet({ client: "all", credentialsPath: "/tmp/cs.json" });
+    const snippet = mcpConfigSnippet({ client: "all" });
     expect(snippet).not.toContain("disabled_tools");
     expect(snippet).not.toContain("enabled_tools");
   });
 
   it("emits Codex enabled_tools / disabled_tools in safe mode", () => {
-    const snippet = mcpConfigSnippet({ client: "codex", credentialsPath: "/tmp/cs.json", safeMode: true });
+    const snippet = mcpConfigSnippet({ client: "codex", safeMode: true });
     for (const name of READ_ONLY_TOOL_NAMES) {
       expect(snippet).toContain(`enabled_tools`);
       expect(snippet).toContain(`"${name}"`);
@@ -75,7 +63,7 @@ describe("mcpConfigSnippet", () => {
   });
 
   it("emits a Claude permission deny list in safe mode", () => {
-    const snippet = mcpConfigSnippet({ client: "claude", credentialsPath: "/tmp/cs.json", safeMode: true });
+    const snippet = mcpConfigSnippet({ client: "claude", safeMode: true });
     expect(snippet).toContain("permissions");
     for (const name of DANGEROUS_TOOL_NAMES) {
       expect(snippet).toContain(`mcp__terra-mcp-google__${name}`);
@@ -83,25 +71,24 @@ describe("mcpConfigSnippet", () => {
   });
 
   it("builds Kiro mcp.json with the mcpServers wrapper", () => {
-    const snippet = mcpConfigSnippet({ client: "kiro", credentialsPath: "/tmp/cs.json" });
+    const snippet = mcpConfigSnippet({ client: "kiro" });
     const json = JSON.parse(snippet.split("\n\n")[1] ?? "");
     expect(json.mcpServers["terra-mcp-google"]).toEqual({
       command: "npx",
       args: ["-y", "--package=terra-mcp-google", "terra-mcp"],
-      env: { GOOGLE_OAUTH_CREDENTIALS: "/tmp/cs.json" },
       disabled: false,
       autoApprove: [],
     });
   });
 
   it("auto-approves only the read-only tools for Kiro in safe mode", () => {
-    const snippet = mcpConfigSnippet({ client: "kiro", credentialsPath: "/tmp/cs.json", safeMode: true });
+    const snippet = mcpConfigSnippet({ client: "kiro", safeMode: true });
     const json = JSON.parse(snippet.split("\n\n")[1] ?? "");
     expect(json.mcpServers["terra-mcp-google"].autoApprove).toEqual([...READ_ONLY_TOOL_NAMES]);
   });
 
   it("names the read-only tool set for Copilot in safe mode", () => {
-    const snippet = mcpConfigSnippet({ client: "copilot", credentialsPath: "/tmp/cs.json", safeMode: true });
+    const snippet = mcpConfigSnippet({ client: "copilot", safeMode: true });
     const json = JSON.parse(snippet.split("\n\n")[1] ?? "");
     expect(json.servers["terra-mcp-google"].tools).toEqual([...READ_ONLY_TOOL_NAMES]);
   });

@@ -29,7 +29,6 @@ Set these in your MCP client's `env` block (or the launching shell):
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `TERRA_MCP_DIR` | `~/.terra-mcp` | Directory holding the OAuth client config + cached token |
-| `GOOGLE_OAUTH_CREDENTIALS` | `<TERRA_MCP_DIR>/client_secret.json` | Google OAuth client JSON; overrides the embedded client |
 | `GOOGLE_OAUTH_TOKEN` | `<TERRA_MCP_DIR>/token.json` | Cached access/refresh token |
 | `TERRA_MCP_SAFE_MODE` | unset | `1` → register **only read-only tools**; drop every mutating tool |
 | `TERRA_MCP_POLICY_DB` | `<TERRA_MCP_DIR>/policy.db` | SQLite database holding the resource allowlist + policy mode |

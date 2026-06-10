@@ -179,16 +179,6 @@ describe("readClientSecret", () => {
     expect(mockReadFile).not.toHaveBeenCalled();
   });
 
-  it("lets explicit GOOGLE_OAUTH_CREDENTIALS override the embedded OAuth client", async () => {
-    vi.stubEnv("GOOGLE_OAUTH_CREDENTIALS", "/tmp/client_secret.json");
-    embeddedOAuthMock.value = { client_id: "embedded", client_secret: "embedded-secret" };
-    mockReadFile.mockResolvedValue(
-      JSON.stringify({ installed: { client_id: "local", client_secret: "local-secret" } }),
-    );
-
-    expect(await readClientSecret()).toEqual({ client_id: "local", client_secret: "local-secret" });
-  });
-
   it("throws NotAuthenticatedError when the file is missing", async () => {
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
     await expect(readClientSecret()).rejects.toBeInstanceOf(NotAuthenticatedError);
